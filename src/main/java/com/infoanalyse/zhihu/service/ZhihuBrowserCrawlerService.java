@@ -759,7 +759,12 @@ public class ZhihuBrowserCrawlerService {
             
             JsonNode author = node.get("author");
             if (author != null) {
-                comment.setAuthorId(author.get("id").asText());
+                // 使用 url_token 作为 authorId（如 mr-dang-77），而不是哈希 id
+                if (author.has("url_token")) {
+                    comment.setAuthorId(author.get("url_token").asText());
+                } else {
+                    comment.setAuthorId(author.get("id").asText());
+                }
                 comment.setAuthorName(author.get("name").asText());
             }
             
@@ -807,7 +812,12 @@ public class ZhihuBrowserCrawlerService {
             
             JsonNode author = node.get("author");
             if (author != null) {
-                comment.setAuthorId(author.get("id").asText());
+                // 使用 url_token 作为 authorId（如 mr-dang-77），而不是哈希 id
+                if (author.has("url_token")) {
+                    comment.setAuthorId(author.get("url_token").asText());
+                } else {
+                    comment.setAuthorId(author.get("id").asText());
+                }
                 comment.setAuthorName(author.get("name").asText());
             }
             
@@ -997,22 +1007,39 @@ public class ZhihuBrowserCrawlerService {
         Page page = context.newPage();
         
         try {
-            // 使用 API 获取文章详情
-            String apiUrl = "https://www.zhihu.com/api/v4/articles/" + articleId;
+            // 先访问文章页面
+            String articleUrl = "https://zhuanlan.zhihu.com/p/" + articleId;
+            System.out.println("访问文章页面: " + articleUrl);
+            page.navigate(articleUrl);
+            page.waitForTimeout(3000);
             
-            page.navigate("https://zhuanlan.zhihu.com/p/" + articleId);
-            page.waitForTimeout(2000);
+            // 尝试从页面 HTML 解析文章内容（更可靠的方式）
+            ZhihuArticle article = parseArticleFromHtml(page, articleId);
+            
+            if (article != null && article.getTitle() != null) {
+                System.out.println("文章抓取成功: " + article.getTitle());
+                return article;
+            }
+            
+            // 备用方案：使用 API
+            String apiUrl = "https://www.zhihu.com/api/v4/articles/" + articleId;
+            System.out.println("尝试 API: " + apiUrl);
             
             String responseJson = (String) page.evaluate(
                 "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
                 apiUrl
             );
             
+            System.out.println("API 响应长度: " + (responseJson != null ? responseJson.length() : 0));
+            
             if (responseJson != null && !responseJson.isEmpty()) {
+                // 打印前500字符用于调试
+                System.out.println("API 响应预览: " + responseJson.substring(0, Math.min(500, responseJson.length())));
+                
                 JsonNode node = objectMapper.readTree(responseJson);
                 
                 if (!node.has("error")) {
-                    ZhihuArticle article = new ZhihuArticle();
+                    article = new ZhihuArticle();
                     article.setId(articleId);
                     
                     if (node.has("title")) {
@@ -1052,6 +1079,8 @@ public class ZhihuBrowserCrawlerService {
                     
                     System.out.println("文章抓取成功: " + article.getTitle());
                     return article;
+                } else {
+                    System.out.println("API 返回错误: " + node.get("error"));
                 }
             }
             
@@ -1062,6 +1091,115 @@ public class ZhihuBrowserCrawlerService {
             throw new RuntimeException("抓取文章失败: " + e.getMessage(), e);
         } finally {
             context.close();
+        }
+    }
+    
+    /**
+     * 从页面 HTML 解析文章内容
+     */
+    private ZhihuArticle parseArticleFromHtml(Page page, String articleId) {
+        try {
+            String html = page.content();
+            org.jsoup.nodes.Document doc = Jsoup.parse(html);
+            
+            ZhihuArticle article = new ZhihuArticle();
+            article.setId(articleId);
+            article.setUrl("https://zhuanlan.zhihu.com/p/" + articleId);
+            
+            // 解析标题
+            org.jsoup.nodes.Element titleElement = doc.selectFirst("h1.Post-Title");
+            if (titleElement == null) {
+                titleElement = doc.selectFirst("article h1");
+            }
+            if (titleElement == null) {
+                titleElement = doc.selectFirst(".Post-RichTextContainer h1");
+            }
+            if (titleElement != null) {
+                article.setTitle(titleElement.text());
+            }
+            
+            // 解析作者
+            org.jsoup.nodes.Element authorElement = doc.selectFirst(".AuthorInfo-name .UserLink-link");
+            if (authorElement == null) {
+                authorElement = doc.selectFirst(".Post-Author .UserLink-link");
+            }
+            if (authorElement == null) {
+                authorElement = doc.selectFirst("a[class*='UserLink']");
+            }
+            if (authorElement != null) {
+                article.setAuthorName(authorElement.text());
+                String authorHref = authorElement.attr("href");
+                if (authorHref.contains("/people/")) {
+                    String[] parts = authorHref.split("/people/");
+                    if (parts.length > 1) {
+                        article.setAuthorId(parts[1].split("[?#/]")[0]);
+                    }
+                }
+            }
+            
+            // 解析内容
+            org.jsoup.nodes.Element contentElement = doc.selectFirst(".Post-RichTextContainer");
+            if (contentElement == null) {
+                contentElement = doc.selectFirst("article .RichText");
+            }
+            if (contentElement == null) {
+                contentElement = doc.selectFirst(".Post-RichText");
+            }
+            if (contentElement != null) {
+                article.setHtmlContent(contentElement.html());
+                article.setContent(contentElement.text());
+            }
+            
+            // 解析点赞数
+            org.jsoup.nodes.Element voteElement = doc.selectFirst("button[class*='VoteButton'] .VoteButton-UpCount");
+            if (voteElement == null) {
+                voteElement = doc.selectFirst(".VoteButton--up");
+            }
+            if (voteElement != null) {
+                String voteText = voteElement.text().replaceAll("[^0-9KkWw万]", "");
+                if (!voteText.isEmpty()) {
+                    try {
+                        if (voteText.contains("K") || voteText.contains("k")) {
+                            article.setVoteupCount((int)(Double.parseDouble(voteText.replaceAll("[KkWw万]", "")) * 1000));
+                        } else if (voteText.contains("W") || voteText.contains("w") || voteText.contains("万")) {
+                            article.setVoteupCount((int)(Double.parseDouble(voteText.replaceAll("[KkWw万]", "")) * 10000));
+                        } else {
+                            article.setVoteupCount(Integer.parseInt(voteText));
+                        }
+                    } catch (NumberFormatException e) {
+                        logger.debug("解析点赞数失败: {}", voteText);
+                    }
+                }
+            }
+            
+            // 解析评论数
+            org.jsoup.nodes.Element commentElement = doc.selectFirst("button[class*='ContentItem-action'] .ContentItem-actions--text");
+            if (commentElement == null) {
+                // 尝试从页面中查找评论数
+                org.jsoup.select.Elements buttons = doc.select("button");
+                for (org.jsoup.nodes.Element btn : buttons) {
+                    String text = btn.text();
+                    if (text.contains("条评论")) {
+                        String numStr = text.replaceAll("[^0-9]", "");
+                        if (!numStr.isEmpty()) {
+                            article.setCommentCount(Integer.parseInt(numStr));
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // 验证是否成功解析
+            if (article.getTitle() != null && !article.getTitle().isEmpty()) {
+                System.out.println("从 HTML 解析成功: " + article.getTitle());
+                return article;
+            }
+            
+            return null;
+            
+        } catch (Exception e) {
+            logger.warn("从 HTML 解析文章失败: {}", e.getMessage());
+            return null;
         }
     }
     
