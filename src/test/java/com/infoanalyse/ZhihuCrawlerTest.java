@@ -1,7 +1,7 @@
 package com.infoanalyse;
 
-import com.infoanalyse.model.ZhihuAnswer;
-import com.infoanalyse.service.ZhihuCrawlerService;
+import com.infoanalyse.zhihu.model.ZhihuAnswer;
+import com.infoanalyse.zhihu.service.ZhihuBrowserCrawlerService;
 
 import java.util.List;
 
@@ -13,7 +13,7 @@ public class ZhihuCrawlerTest {
     public static void main(String[] args) {
         System.out.println("=== 知乎数据抓取测试 ===\n");
         
-        ZhihuCrawlerService service = new ZhihuCrawlerService();
+        ZhihuBrowserCrawlerService service = new ZhihuBrowserCrawlerService();
         
         try {
             // 测试抓取用户回答
@@ -45,6 +45,8 @@ public class ZhihuCrawlerTest {
         } catch (Exception e) {
             System.err.println("抓取失败: " + e.getMessage());
             e.printStackTrace();
+        } finally {
+            service.closeBrowser();
         }
     }
 }

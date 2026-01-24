@@ -1,9 +1,9 @@
-package com.infoanalyse.command;
+package com.infoanalyse.zhihu;
 
-import com.infoanalyse.model.ZhihuAnswer;
-import com.infoanalyse.model.ZhihuComment;
-import com.infoanalyse.service.AnswerSaveService;
-import com.infoanalyse.service.ZhihuBrowserCrawlerService;
+import com.infoanalyse.zhihu.model.ZhihuAnswer;
+import com.infoanalyse.zhihu.model.ZhihuComment;
+import com.infoanalyse.zhihu.service.AnswerSaveService;
+import com.infoanalyse.zhihu.service.ZhihuBrowserCrawlerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
@@ -63,8 +63,8 @@ public class ZhihuCommand {
     public String crawlUserAnswers(
             @ShellOption(value = "--user-id", help = "知乎用户ID") String userId,
             @ShellOption(value = "--limit", help = "抓取数量限制", defaultValue = "10") int limit,
-            @ShellOption(value = "--show-browser", help = "显示浏览器窗口（用于手动登录）", defaultValue = "false") boolean showBrowser,
-            @ShellOption(value = "--save", help = "保存回答为 Markdown 文件（包含图片）", defaultValue = "false") boolean save,
+            @ShellOption(value = "--show-browser", help = "显示浏览器窗口", defaultValue = "false") boolean showBrowser,
+            @ShellOption(value = "--save", help = "保存回答为 Markdown 文件", defaultValue = "false") boolean save,
             @ShellOption(value = "--with-comments", help = "同时抓取作者参与的评论", defaultValue = "false") boolean withComments) {
         
         try {
@@ -124,7 +124,6 @@ public class ZhihuCommand {
             if (save) {
                 System.out.println("正在保存回答为 Markdown 文件...");
                 
-                // 如果带评论，强制覆盖保存
                 if (withComments) {
                     int savedCount = 0;
                     for (ZhihuAnswer answer : answers) {
@@ -137,7 +136,6 @@ public class ZhihuCommand {
                     }
                     System.out.println("保存 " + savedCount + " 个文件到 output/" + userId + "/ 目录（含评论）");
                 } else {
-                    // 不带评论，跳过已保存的
                     int existingCount = answerSaveService.getSavedAnswerIds(userId).size();
                     List<Path> savedFiles = answerSaveService.saveAnswers(answers, userId);
                     
@@ -145,9 +143,6 @@ public class ZhihuCommand {
                         System.out.println("所有回答都已保存过，无需重复保存");
                     } else {
                         System.out.println("新保存 " + savedFiles.size() + " 个文件到 output/" + userId + "/ 目录");
-                        if (existingCount > 0) {
-                            System.out.println("（跳过 " + (answers.size() - savedFiles.size()) + " 个已保存的回答）");
-                        }
                     }
                 }
             }
@@ -158,27 +153,6 @@ public class ZhihuCommand {
             e.printStackTrace();
             return "抓取失败: " + e.getMessage();
         }
-    }
-
-    /**
-     * 抓取指定回答的评论（暂未实现）
-     */
-    @ShellMethod(value = "抓取知乎回答的评论", key = "zhihu-comments")
-    public String crawlAnswerComments(
-            @ShellOption(value = "--answer-id", help = "回答ID") String answerId,
-            @ShellOption(value = "--limit", help = "抓取数量限制", defaultValue = "50") int limit) {
-        
-        return "评论抓取功能暂未实现，敬请期待！";
-    }
-
-    /**
-     * 抓取回答详情（包含评论）（暂未实现）
-     */
-    @ShellMethod(value = "抓取知乎回答详情（含评论）", key = "zhihu-answer")
-    public String crawlAnswerDetail(
-            @ShellOption(value = "--answer-id", help = "回答ID") String answerId) {
-        
-        return "回答详情抓取功能暂未实现，敬请期待！";
     }
 
     /**
@@ -193,21 +167,15 @@ public class ZhihuCommand {
         help.append("2. 在浏览器中登录知乎\n");
         help.append("3. zhihu-save-cookies   - 保存登录状态\n");
         help.append("4. zhihu-user ...       - 抓取数据\n\n");
-        help.append("【已保存登录状态后】\n");
-        help.append("直接使用 zhihu-user 即可抓取数据\n\n");
         help.append("【可用命令】\n");
-        help.append("zhihu-login                                    - 打开浏览器登录\n");
-        help.append("zhihu-save-cookies                             - 保存登录状态\n");
-        help.append("zhihu-user --user-id <用户ID> [选项]           - 抓取用户回答\n");
+        help.append("zhihu-user --user-id <用户ID> [选项]\n");
         help.append("\n【参数说明】\n");
         help.append("--user-id       知乎用户ID（必填）\n");
         help.append("--limit         抓取数量，默认10\n");
-        help.append("--save          保存为 Markdown 文件（包含图片）\n");
-        help.append("--with-comments 同时抓取作者参与的评论（需配合 --save）\n");
+        help.append("--save          保存为 Markdown 文件\n");
+        help.append("--with-comments 同时抓取作者参与的评论\n");
         help.append("--show-browser  显示浏览器窗口\n");
         help.append("\n【示例】\n");
-        help.append("zhihu-user --user-id mr-dang-77 --limit 5\n");
-        help.append("zhihu-user --user-id mr-dang-77 --limit 5 --save\n");
         help.append("zhihu-user --user-id mr-dang-77 --limit 5 --save --with-comments\n");
         
         return help.toString();

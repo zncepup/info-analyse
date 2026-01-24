@@ -1,7 +1,7 @@
-package com.infoanalyse.service;
+package com.infoanalyse.zhihu.service;
 
-import com.infoanalyse.model.ZhihuAnswer;
-import com.infoanalyse.model.ZhihuComment;
+import com.infoanalyse.zhihu.model.ZhihuAnswer;
+import com.infoanalyse.zhihu.model.ZhihuComment;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -53,14 +53,13 @@ public class AnswerSaveService {
             return false;
         }
         try {
-            // 检查是否存在以该 answerId 开头的文件
             return Files.list(userDir)
                     .anyMatch(p -> p.getFileName().toString().startsWith(answerId + "_"));
         } catch (IOException e) {
             return false;
         }
     }
-    
+
     /**
      * 获取已保存的回答 ID 集合
      */
@@ -175,7 +174,6 @@ public class AnswerSaveService {
         if (htmlContent != null && !htmlContent.isEmpty()) {
             md.append(htmlToMarkdown(htmlContent, imagesDir, answerId));
         } else if (answer.getContent() != null) {
-            // 如果没有 HTML 内容，使用纯文本
             md.append(answer.getContent());
         }
         
@@ -215,10 +213,8 @@ public class AnswerSaveService {
             
             // 输出评论（带层级）
             for (ZhihuComment rootComment : rootComments) {
-                // 输出根评论
                 appendComment(md, rootComment, answer.getAuthorId(), false);
                 
-                // 输出子评论（缩进）
                 List<ZhihuComment> children = childrenMap.get(rootComment.getId());
                 if (children != null) {
                     for (ZhihuComment child : children) {
@@ -229,7 +225,7 @@ public class AnswerSaveService {
                 md.append("---\n\n");
             }
             
-            // 处理没有父评论的子评论（可能父评论不在筛选结果中）
+            // 处理没有父评论的子评论
             List<ZhihuComment> orphanComments = new ArrayList<>();
             for (ZhihuComment comment : answer.getComments()) {
                 if (comment.getParentCommentId() != null && 
@@ -240,7 +236,6 @@ public class AnswerSaveService {
             }
             
             if (!orphanComments.isEmpty()) {
-                // 按时间排序
                 orphanComments.sort((a, b) -> {
                     if (a.getCreatedTime() == null) return 1;
                     if (b.getCreatedTime() == null) return -1;
@@ -256,7 +251,7 @@ public class AnswerSaveService {
         
         return md.toString();
     }
-    
+
     /**
      * HTML 转 Markdown（处理图片、链接、格式等）
      */
@@ -332,7 +327,6 @@ public class AnswerSaveService {
                         }
                     }
                     case "figure" -> {
-                        // 知乎图片通常在 figure 标签内
                         Element figImg = child.selectFirst("img");
                         if (figImg != null) {
                             String localPath = figImg.attr("data-local-path");
@@ -396,23 +390,19 @@ public class AnswerSaveService {
         }
     }
 
-    
     /**
      * 下载图片到本地
      */
     private String downloadImage(String imageUrl, Path imagesDir, String answerId, int index) {
         try {
-            // 确保 URL 是完整的
             if (imageUrl.startsWith("//")) {
                 imageUrl = "https:" + imageUrl;
             }
             
-            // 从 URL 获取文件扩展名
             String extension = getImageExtension(imageUrl);
             String fileName = answerId + "_" + index + extension;
             Path imagePath = imagesDir.resolve(fileName);
             
-            // 如果文件已存在，跳过下载
             if (Files.exists(imagePath)) {
                 logger.debug("图片已存在，跳过: {}", fileName);
                 return "images/" + fileName;
@@ -451,25 +441,20 @@ public class AnswerSaveService {
      * 从 URL 获取图片扩展名
      */
     private String getImageExtension(String url) {
-        // 移除查询参数
         int queryIndex = url.indexOf('?');
         if (queryIndex > 0) {
             url = url.substring(0, queryIndex);
         }
         
-        // 常见图片格式
         if (url.endsWith(".jpg") || url.endsWith(".jpeg")) return ".jpg";
         if (url.endsWith(".png")) return ".png";
         if (url.endsWith(".gif")) return ".gif";
         if (url.endsWith(".webp")) return ".webp";
         
-        // 知乎图片 URL 格式特殊处理
         if (url.contains("zhimg.com")) {
-            // 知乎图片默认 jpg
             return ".jpg";
         }
         
-        // 默认 jpg
         return ".jpg";
     }
     
@@ -478,7 +463,6 @@ public class AnswerSaveService {
      */
     private String sanitizeFileName(String name) {
         if (name == null) return "untitled";
-        // 替换 Windows 和 Unix 文件系统不允许的字符
         return name.replaceAll("[\\\\/:*?\"<>|]", "_")
                    .replaceAll("\\s+", "_")
                    .trim();
@@ -486,32 +470,24 @@ public class AnswerSaveService {
     
     /**
      * 输出单条评论到 Markdown
-     * @param md StringBuilder
-     * @param comment 评论
-     * @param answerAuthorId 回答作者ID
-     * @param isChild 是否是子评论（需要缩进）
      */
     private void appendComment(StringBuilder md, ZhihuComment comment, String answerAuthorId, boolean isChild) {
         boolean isAuthor = answerAuthorId != null && answerAuthorId.equals(comment.getAuthorId());
         String authorMark = isAuthor ? " 🔖" : "";
         
-        // 评论内容
         String content = comment.getContent();
         if (content != null) {
             content = content.replaceAll("<[^>]+>", "").trim();
         }
         
-        // 时间信息
         String timeStr = "";
         if (comment.getCreatedTime() != null) {
             timeStr = comment.getCreatedTime().format(DATE_FORMAT);
         }
         
-        // 点赞信息
         String likeStr = comment.getLikeCount() > 0 ? " 👍" + comment.getLikeCount() : "";
         
         if (isChild) {
-            // 子评论：使用缩进和竖线表示层级
             md.append("│\n");
             md.append("└─ **").append(comment.getAuthorName()).append("**").append(authorMark);
             if (comment.getReplyToAuthor() != null && !comment.getReplyToAuthor().isEmpty()) {
@@ -520,7 +496,6 @@ public class AnswerSaveService {
             md.append(": ").append(content != null ? content : "").append("\n");
             md.append("   *").append(timeStr).append("*").append(likeStr).append("\n\n");
         } else {
-            // 根评论：使用醒目的格式
             md.append("💬 **").append(comment.getAuthorName()).append("**").append(authorMark).append("\n\n");
             md.append("> ").append(content != null ? content.replace("\n", "\n> ") : "").append("\n\n");
             md.append("*").append(timeStr).append("*").append(likeStr).append("\n\n");
