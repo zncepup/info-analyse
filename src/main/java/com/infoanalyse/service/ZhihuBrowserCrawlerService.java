@@ -14,7 +14,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.List;
 
 /**
  * 基于 Playwright 的知乎数据抓取服务
@@ -370,6 +369,7 @@ public class ZhihuBrowserCrawlerService {
                         contentElement = element.selectFirst(".content");
                     }
                     if (contentElement != null) {
+                        answer.setHtmlContent(contentElement.html());  // 保存原始 HTML
                         answer.setContent(contentElement.text());
                     }
                     
@@ -436,9 +436,10 @@ public class ZhihuBrowserCrawlerService {
             answer.setAuthorName(author.get("name").asText());
         }
         
-        // 解析内容（去除HTML标签）
+        // 解析内容
         if (node.has("content")) {
             String htmlContent = node.get("content").asText();
+            answer.setHtmlContent(htmlContent);  // 保存原始 HTML
             String plainText = Jsoup.parse(htmlContent).text();
             answer.setContent(plainText);
         }

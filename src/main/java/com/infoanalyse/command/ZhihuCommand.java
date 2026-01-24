@@ -1,12 +1,14 @@
 package com.infoanalyse.command;
 
 import com.infoanalyse.model.ZhihuAnswer;
+import com.infoanalyse.service.AnswerSaveService;
 import com.infoanalyse.service.ZhihuBrowserCrawlerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -17,6 +19,9 @@ public class ZhihuCommand {
 
     @Autowired
     private ZhihuBrowserCrawlerService zhihuBrowserCrawlerService;
+    
+    @Autowired
+    private AnswerSaveService answerSaveService;
 
     /**
      * 打开浏览器让用户登录知乎
@@ -57,7 +62,8 @@ public class ZhihuCommand {
     public String crawlUserAnswers(
             @ShellOption(value = "--user-id", help = "知乎用户ID") String userId,
             @ShellOption(value = "--limit", help = "抓取数量限制", defaultValue = "10") int limit,
-            @ShellOption(value = "--show-browser", help = "显示浏览器窗口（用于手动登录）", defaultValue = "false") boolean showBrowser) {
+            @ShellOption(value = "--show-browser", help = "显示浏览器窗口（用于手动登录）", defaultValue = "false") boolean showBrowser,
+            @ShellOption(value = "--save", help = "保存回答为 Markdown 文件（包含图片）", defaultValue = "false") boolean save) {
         
         try {
             if (showBrowser) {
@@ -88,6 +94,22 @@ public class ZhihuCommand {
                     System.out.printf("内容预览: %s%n", preview);
                 }
                 System.out.println();
+            }
+            
+            // 保存为文件
+            if (save) {
+                System.out.println("正在保存回答为 Markdown 文件...");
+                int existingCount = answerSaveService.getSavedAnswerIds(userId).size();
+                List<Path> savedFiles = answerSaveService.saveAnswers(answers, userId);
+                
+                if (savedFiles.isEmpty() && existingCount > 0) {
+                    System.out.println("所有回答都已保存过，无需重复保存");
+                } else {
+                    System.out.println("新保存 " + savedFiles.size() + " 个文件到 output/" + userId + "/ 目录");
+                    if (existingCount > 0) {
+                        System.out.println("（跳过 " + (answers.size() - savedFiles.size()) + " 个已保存的回答）");
+                    }
+                }
             }
             
             return "抓取成功！";
@@ -136,9 +158,15 @@ public class ZhihuCommand {
         help.append("【可用命令】\n");
         help.append("zhihu-login                                    - 打开浏览器登录\n");
         help.append("zhihu-save-cookies                             - 保存登录状态\n");
-        help.append("zhihu-user --user-id <用户ID> [--limit <数量>] - 抓取用户回答\n");
+        help.append("zhihu-user --user-id <用户ID> [--limit <数量>] [--save] - 抓取用户回答\n");
+        help.append("\n【参数说明】\n");
+        help.append("--user-id      知乎用户ID（必填）\n");
+        help.append("--limit        抓取数量，默认10\n");
+        help.append("--save         保存为 Markdown 文件（包含图片）\n");
+        help.append("--show-browser 显示浏览器窗口\n");
         help.append("\n【示例】\n");
         help.append("zhihu-user --user-id mr-dang-77 --limit 5\n");
+        help.append("zhihu-user --user-id mr-dang-77 --limit 5 --save\n");
         
         return help.toString();
     }

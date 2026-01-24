@@ -12,7 +12,8 @@ public class ZhihuAnswer {
     private String questionTitle;
     private String authorName;
     private String authorId;
-    private String content;
+    private String content;        // 纯文本内容
+    private String htmlContent;    // 原始 HTML 内容（包含图片）
     private int voteupCount;
     private int commentCount;
     private LocalDateTime createdTime;
@@ -70,6 +71,14 @@ public class ZhihuAnswer {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getHtmlContent() {
+        return htmlContent;
+    }
+
+    public void setHtmlContent(String htmlContent) {
+        this.htmlContent = htmlContent;
     }
 
     public int getVoteupCount() {

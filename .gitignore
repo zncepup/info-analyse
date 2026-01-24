@@ -41,3 +41,8 @@ Thumbs.db
 application-local.properties
 application-dev.properties
 logs/
+
+# 爬取数据
+output/
+zhihu_cookies.json
+debug_page.html
