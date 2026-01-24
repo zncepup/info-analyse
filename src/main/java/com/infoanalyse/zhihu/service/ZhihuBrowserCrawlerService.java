@@ -424,7 +424,12 @@ public class ZhihuBrowserCrawlerService {
         
         JsonNode author = node.get("author");
         if (author != null) {
-            answer.setAuthorId(author.get("id").asText());
+            // 使用 url_token 作为 authorId（如 mr-dang-77），用于评论筛选
+            if (author.has("url_token")) {
+                answer.setAuthorId(author.get("url_token").asText());
+            } else {
+                answer.setAuthorId(author.get("id").asText());
+            }
             answer.setAuthorName(author.get("name").asText());
         }
         
@@ -946,7 +951,12 @@ public class ZhihuBrowserCrawlerService {
                     
                     JsonNode author = node.get("author");
                     if (author != null) {
-                        answer.setAuthorId(author.get("id").asText());
+                        // 使用 url_token 作为 authorId（如 mr-dang-77），用于评论筛选
+                        if (author.has("url_token")) {
+                            answer.setAuthorId(author.get("url_token").asText());
+                        } else {
+                            answer.setAuthorId(author.get("id").asText());
+                        }
                         answer.setAuthorName(author.get("name").asText());
                     }
                     
@@ -1054,7 +1064,12 @@ public class ZhihuBrowserCrawlerService {
                     
                     JsonNode author = node.get("author");
                     if (author != null) {
-                        article.setAuthorId(author.get("id").asText());
+                        // 使用 url_token 作为 authorId（如 mr-dang-77），用于评论筛选
+                        if (author.has("url_token")) {
+                            article.setAuthorId(author.get("url_token").asText());
+                        } else {
+                            article.setAuthorId(author.get("id").asText());
+                        }
                         article.setAuthorName(author.get("name").asText());
                     }
                     
