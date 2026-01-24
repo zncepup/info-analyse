@@ -13,7 +13,8 @@ public class ZhihuComment {
     private String content;
     private int likeCount;
     private LocalDateTime createdTime;
-    private String parentCommentId; // 父评论ID，用于回复
+    private String parentCommentId; // 父评论ID（根评论ID）
+    private String replyCommentId;  // 回复的评论ID（可能是子评论）
     private String replyToAuthor;   // 回复给谁
 
     // 构造函数
@@ -82,6 +83,14 @@ public class ZhihuComment {
 
     public void setParentCommentId(String parentCommentId) {
         this.parentCommentId = parentCommentId;
+    }
+
+    public String getReplyCommentId() {
+        return replyCommentId;
+    }
+
+    public void setReplyCommentId(String replyCommentId) {
+        this.replyCommentId = replyCommentId;
     }
 
     public String getReplyToAuthor() {

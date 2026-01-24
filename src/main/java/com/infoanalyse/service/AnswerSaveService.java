@@ -179,29 +179,78 @@ public class AnswerSaveService {
             md.append(answer.getContent());
         }
         
-        // 添加评论部分
+        // 添加评论部分（体现父子关系）
         if (answer.getComments() != null && !answer.getComments().isEmpty()) {
             md.append("\n\n---\n\n");
             md.append("## 作者互动评论\n\n");
             
+            // 按父子关系分组评论
+            java.util.Map<String, List<ZhihuComment>> childrenMap = new java.util.HashMap<>();
+            List<ZhihuComment> rootComments = new ArrayList<>();
+            
             for (ZhihuComment comment : answer.getComments()) {
-                String authorMark = answer.getAuthorId() != null && 
-                        answer.getAuthorId().equals(comment.getAuthorId()) ? " 👤作者" : "";
+                if (comment.getParentCommentId() == null) {
+                    rootComments.add(comment);
+                } else {
+                    childrenMap.computeIfAbsent(comment.getParentCommentId(), k -> new ArrayList<>())
+                              .add(comment);
+                }
+            }
+            
+            // 根评论按时间排序
+            rootComments.sort((a, b) -> {
+                if (a.getCreatedTime() == null) return 1;
+                if (b.getCreatedTime() == null) return -1;
+                return a.getCreatedTime().compareTo(b.getCreatedTime());
+            });
+            
+            // 子评论也按时间排序
+            for (List<ZhihuComment> children : childrenMap.values()) {
+                children.sort((a, b) -> {
+                    if (a.getCreatedTime() == null) return 1;
+                    if (b.getCreatedTime() == null) return -1;
+                    return a.getCreatedTime().compareTo(b.getCreatedTime());
+                });
+            }
+            
+            // 输出评论（带层级）
+            for (ZhihuComment rootComment : rootComments) {
+                // 输出根评论
+                appendComment(md, rootComment, answer.getAuthorId(), false);
                 
-                md.append("**").append(comment.getAuthorName()).append("**").append(authorMark);
-                if (comment.getReplyToAuthor() != null) {
-                    md.append(" 回复 **").append(comment.getReplyToAuthor()).append("**");
+                // 输出子评论（缩进）
+                List<ZhihuComment> children = childrenMap.get(rootComment.getId());
+                if (children != null) {
+                    for (ZhihuComment child : children) {
+                        appendComment(md, child, answer.getAuthorId(), true);
+                    }
                 }
-                md.append(":\n\n");
-                md.append("> ").append(comment.getContent().replace("\n", "\n> ")).append("\n\n");
                 
-                if (comment.getCreatedTime() != null) {
-                    md.append("*").append(comment.getCreatedTime().format(DATE_FORMAT)).append("*");
+                md.append("---\n\n");
+            }
+            
+            // 处理没有父评论的子评论（可能父评论不在筛选结果中）
+            List<ZhihuComment> orphanComments = new ArrayList<>();
+            for (ZhihuComment comment : answer.getComments()) {
+                if (comment.getParentCommentId() != null && 
+                    !rootComments.stream().anyMatch(r -> r.getId().equals(comment.getParentCommentId())) &&
+                    !childrenMap.values().stream().flatMap(List::stream).anyMatch(c -> c.getId().equals(comment.getId()))) {
+                    orphanComments.add(comment);
                 }
-                if (comment.getLikeCount() > 0) {
-                    md.append(" | 👍 ").append(comment.getLikeCount());
+            }
+            
+            if (!orphanComments.isEmpty()) {
+                // 按时间排序
+                orphanComments.sort((a, b) -> {
+                    if (a.getCreatedTime() == null) return 1;
+                    if (b.getCreatedTime() == null) return -1;
+                    return a.getCreatedTime().compareTo(b.getCreatedTime());
+                });
+                
+                for (ZhihuComment comment : orphanComments) {
+                    appendComment(md, comment, answer.getAuthorId(), false);
+                    md.append("---\n\n");
                 }
-                md.append("\n\n---\n\n");
             }
         }
         
@@ -433,5 +482,48 @@ public class AnswerSaveService {
         return name.replaceAll("[\\\\/:*?\"<>|]", "_")
                    .replaceAll("\\s+", "_")
                    .trim();
+    }
+    
+    /**
+     * 输出单条评论到 Markdown
+     * @param md StringBuilder
+     * @param comment 评论
+     * @param answerAuthorId 回答作者ID
+     * @param isChild 是否是子评论（需要缩进）
+     */
+    private void appendComment(StringBuilder md, ZhihuComment comment, String answerAuthorId, boolean isChild) {
+        boolean isAuthor = answerAuthorId != null && answerAuthorId.equals(comment.getAuthorId());
+        String authorMark = isAuthor ? " 🔖" : "";
+        
+        // 评论内容
+        String content = comment.getContent();
+        if (content != null) {
+            content = content.replaceAll("<[^>]+>", "").trim();
+        }
+        
+        // 时间信息
+        String timeStr = "";
+        if (comment.getCreatedTime() != null) {
+            timeStr = comment.getCreatedTime().format(DATE_FORMAT);
+        }
+        
+        // 点赞信息
+        String likeStr = comment.getLikeCount() > 0 ? " 👍" + comment.getLikeCount() : "";
+        
+        if (isChild) {
+            // 子评论：使用缩进和竖线表示层级
+            md.append("│\n");
+            md.append("└─ **").append(comment.getAuthorName()).append("**").append(authorMark);
+            if (comment.getReplyToAuthor() != null && !comment.getReplyToAuthor().isEmpty()) {
+                md.append(" → ").append(comment.getReplyToAuthor());
+            }
+            md.append(": ").append(content != null ? content : "").append("\n");
+            md.append("   *").append(timeStr).append("*").append(likeStr).append("\n\n");
+        } else {
+            // 根评论：使用醒目的格式
+            md.append("💬 **").append(comment.getAuthorName()).append("**").append(authorMark).append("\n\n");
+            md.append("> ").append(content != null ? content.replace("\n", "\n> ") : "").append("\n\n");
+            md.append("*").append(timeStr).append("*").append(likeStr).append("\n\n");
+        }
     }
 }
