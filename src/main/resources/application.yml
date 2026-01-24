@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: info-analyse
+  
+  # Spring Shell 配置
+  shell:
+    interactive:
+      enabled: true
+    noninteractive:
+      enabled: false
+
+# 应用配置
+app:
+  name: 投资信息分析系统
+  version: 1.0.0
+  
+# 知乎抓取配置
+zhihu:
+  base-url: https://www.zhihu.com
+  api-base-url: https://www.zhihu.com/api/v4
+  request:
+    timeout: 10000
+    retry-count: 3
+    delay-ms: 1000
+  headers:
+    user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+    accept: application/json, text/plain, */*
+    accept-language: zh-CN,zh;q=0.9,en;q=0.8
+
+# 日志配置
+logging:
+  level:
+    com.infoanalyse: INFO
+    org.springframework.web.reactive.function.client: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
