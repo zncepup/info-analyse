@@ -1323,7 +1323,8 @@ public class ZhihuBrowserCrawlerService {
                     }
                     
                     if (nextUrl != null) {
-                        page.waitForTimeout(1000 + random.nextInt(1000));
+                        // 随机延迟 2-4 秒，避免被反爬
+                        page.waitForTimeout(2000 + random.nextInt(2000));
                     }
                     
                 } catch (Exception e) {

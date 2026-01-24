@@ -399,6 +399,7 @@ public class ZhihuCommand {
             System.out.println("=== 开始抓取新内容 ===");
             
             int savedCount = 0;
+            java.util.Random random = new java.util.Random();
             
             // 抓取新回答
             for (int i = 0; i < newAnswers.size(); i++) {
@@ -425,8 +426,10 @@ public class ZhihuCommand {
                     System.out.println("  ✗ 抓取失败: " + e.getMessage());
                 }
                 
-                // 避免请求过快
-                Thread.sleep(1000);
+                // 随机延迟 3-6 秒，避免被反爬
+                int delay = 3000 + random.nextInt(3000);
+                System.out.println("  等待 " + (delay / 1000.0) + " 秒...");
+                Thread.sleep(delay);
             }
             
             // 抓取新文章
@@ -454,8 +457,10 @@ public class ZhihuCommand {
                     System.out.println("  ✗ 抓取失败: " + e.getMessage());
                 }
                 
-                // 避免请求过快
-                Thread.sleep(1000);
+                // 随机延迟 3-6 秒，避免被反爬
+                int delay = 3000 + random.nextInt(3000);
+                System.out.println("  等待 " + (delay / 1000.0) + " 秒...");
+                Thread.sleep(delay);
             }
             
             System.out.println();
