@@ -92,12 +92,13 @@ public class AnswerSaveService {
     /**
      * 保存单个回答为 Markdown 文件
      */
-    public Path saveAnswer(ZhihuAnswer answer, String userId) throws IOException {
-        // 创建输出目录: output/<user-id>/
-        Path userDir = Path.of(OUTPUT_DIR, userId);
+    public Path saveAnswer(ZhihuAnswer answer, String authorName) throws IOException {
+        // 创建输出目录: output/<author-name>/
+        String safeAuthorName = sanitizeFileName(authorName);
+        Path userDir = Path.of(OUTPUT_DIR, safeAuthorName);
         Files.createDirectories(userDir);
         
-        // 创建图片目录: output/<user-id>/images/
+        // 创建图片目录: output/<author-name>/images/
         Path imagesDir = userDir.resolve("images");
         Files.createDirectories(imagesDir);
         
@@ -506,8 +507,9 @@ public class AnswerSaveService {
     /**
      * 保存文章为 Markdown 文件
      */
-    public Path saveArticle(ZhihuArticle article, String userId) throws IOException {
-        Path userDir = Path.of(OUTPUT_DIR, userId);
+    public Path saveArticle(ZhihuArticle article, String authorName) throws IOException {
+        String safeAuthorName = sanitizeFileName(authorName);
+        Path userDir = Path.of(OUTPUT_DIR, safeAuthorName);
         Files.createDirectories(userDir);
         
         Path imagesDir = userDir.resolve("images");

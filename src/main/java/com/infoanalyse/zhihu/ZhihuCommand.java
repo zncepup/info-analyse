@@ -258,8 +258,8 @@ public class ZhihuCommand {
         
         if (save) {
             try {
-                String userId = answer.getAuthorId() != null ? answer.getAuthorId() : "unknown";
-                Path savedPath = answerSaveService.saveAnswer(answer, userId);
+                String authorFolder = answer.getAuthorName() != null ? answer.getAuthorName() : "unknown";
+                Path savedPath = answerSaveService.saveAnswer(answer, authorFolder);
                 System.out.println("已保存到: " + savedPath);
             } catch (Exception e) {
                 System.out.println("保存失败: " + e.getMessage());
@@ -300,8 +300,8 @@ public class ZhihuCommand {
         
         if (save) {
             try {
-                String userId = article.getAuthorId() != null ? article.getAuthorId() : "unknown";
-                Path savedPath = answerSaveService.saveArticle(article, userId);
+                String authorFolder = article.getAuthorName() != null ? article.getAuthorName() : "unknown";
+                Path savedPath = answerSaveService.saveArticle(article, authorFolder);
                 System.out.println("已保存到: " + savedPath);
             } catch (Exception e) {
                 System.out.println("保存失败: " + e.getMessage());
