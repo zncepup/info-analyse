@@ -175,6 +175,7 @@ public class ZhihuCommand {
         help.append("【可用命令】\n");
         help.append("zhihu-user --user-id <用户ID> [选项]  - 抓取用户回答列表\n");
         help.append("zhihu-fetch --url <链接> [选项]       - 抓取指定回答或文章\n");
+        help.append("zhihu-sync --user-id <用户ID> [选项]  - 同步用户动态（增量抓取）\n");
         help.append("\n【zhihu-user 参数】\n");
         help.append("--user-id       知乎用户ID（必填）\n");
         help.append("--limit         抓取数量，默认10\n");
@@ -185,12 +186,17 @@ public class ZhihuCommand {
         help.append("--url           回答或文章链接（必填）\n");
         help.append("--save          保存为 Markdown 文件\n");
         help.append("--with-comments 同时抓取作者参与的评论\n");
+        help.append("\n【zhihu-sync 参数】\n");
+        help.append("--user-id       知乎用户ID（必填）\n");
+        help.append("--limit         检查动态数量，默认50\n");
+        help.append("--with-comments 同时抓取作者参与的评论\n");
         help.append("\n【支持的链接格式】\n");
         help.append("回答: https://www.zhihu.com/question/xxx/answer/yyy\n");
         help.append("文章: https://zhuanlan.zhihu.com/p/xxx\n");
         help.append("\n【示例】\n");
         help.append("zhihu-user --user-id mr-dang-77 --limit 5 --save --with-comments\n");
         help.append("zhihu-fetch --url https://zhuanlan.zhihu.com/p/123456 --save --with-comments\n");
+        help.append("zhihu-sync --user-id mr-dang-77 --limit 100 --with-comments\n");
         
         return help.toString();
     }
@@ -313,5 +319,162 @@ public class ZhihuCommand {
         }
         
         return "文章抓取成功！";
+    }
+    
+    /**
+     * 同步用户动态（增量抓取新内容）
+     */
+    @ShellMethod(value = "同步用户动态，增量抓取新的回答和文章", key = "zhihu-sync")
+    public String syncUserActivities(
+            @ShellOption(value = "--user-id", help = "知乎用户ID") String userId,
+            @ShellOption(value = "--limit", help = "检查动态数量限制", defaultValue = "50") int limit,
+            @ShellOption(value = "--with-comments", help = "同时抓取作者参与的评论", defaultValue = "false") boolean withComments) {
+        
+        try {
+            zhihuBrowserCrawlerService.setHeadless(true);
+            
+            System.out.println("正在获取用户 " + userId + " 的动态...");
+            
+            // 获取用户动态列表
+            List<ZhihuBrowserCrawlerService.ActivityItem> activities = 
+                zhihuBrowserCrawlerService.crawlUserActivities(userId, limit);
+            
+            if (activities.isEmpty()) {
+                return "未获取到任何动态";
+            }
+            
+            // 获取作者名称
+            String authorName = activities.get(0).authorName;
+            if (authorName == null || authorName.isEmpty()) {
+                authorName = userId;
+            }
+            
+            System.out.println();
+            System.out.println("=== 动态概览 ===");
+            System.out.println("作者: " + authorName);
+            System.out.println("获取动态: " + activities.size() + " 条");
+            
+            long answerCount = activities.stream().filter(a -> "answer".equals(a.type)).count();
+            long articleCount = activities.stream().filter(a -> "article".equals(a.type)).count();
+            System.out.println("其中回答: " + answerCount + " 条，文章: " + articleCount + " 条");
+            System.out.println();
+            
+            // 检查哪些是新的
+            java.util.Set<String> savedAnswerIds = answerSaveService.getSavedAnswerIds(authorName);
+            
+            List<ZhihuBrowserCrawlerService.ActivityItem> newAnswers = new java.util.ArrayList<>();
+            List<ZhihuBrowserCrawlerService.ActivityItem> newArticles = new java.util.ArrayList<>();
+            
+            for (ZhihuBrowserCrawlerService.ActivityItem item : activities) {
+                if ("answer".equals(item.type)) {
+                    if (!savedAnswerIds.contains(item.id)) {
+                        newAnswers.add(item);
+                    }
+                } else if ("article".equals(item.type)) {
+                    if (!answerSaveService.isArticleSaved(item.id, authorName)) {
+                        newArticles.add(item);
+                    }
+                }
+            }
+            
+            System.out.println("新增回答: " + newAnswers.size() + " 条");
+            System.out.println("新增文章: " + newArticles.size() + " 条");
+            
+            if (newAnswers.isEmpty() && newArticles.isEmpty()) {
+                System.out.println();
+                System.out.println("没有新内容需要抓取");
+                
+                // 更新索引
+                try {
+                    answerSaveService.updateAuthorIndex(authorName, userId);
+                    System.out.println("索引已更新");
+                } catch (Exception e) {
+                    System.out.println("更新索引失败: " + e.getMessage());
+                }
+                
+                return "同步完成，无新内容";
+            }
+            
+            System.out.println();
+            System.out.println("=== 开始抓取新内容 ===");
+            
+            int savedCount = 0;
+            
+            // 抓取新回答
+            for (int i = 0; i < newAnswers.size(); i++) {
+                ZhihuBrowserCrawlerService.ActivityItem item = newAnswers.get(i);
+                System.out.println();
+                System.out.println("[" + (i + 1) + "/" + newAnswers.size() + "] 抓取回答: " + item.title);
+                
+                try {
+                    ZhihuAnswer answer = zhihuBrowserCrawlerService.crawlAnswerById(item.id);
+                    
+                    if (withComments && answer.getCommentCount() > 0 && answer.getAuthorId() != null) {
+                        System.out.println("  抓取评论...");
+                        List<ZhihuComment> comments = zhihuBrowserCrawlerService.crawlAnswerComments(
+                                answer.getId(), answer.getAuthorId());
+                        answer.setComments(comments);
+                        System.out.println("  获取 " + comments.size() + " 条作者互动评论");
+                    }
+                    
+                    answerSaveService.saveAnswer(answer, authorName);
+                    savedCount++;
+                    System.out.println("  ✓ 已保存");
+                    
+                } catch (Exception e) {
+                    System.out.println("  ✗ 抓取失败: " + e.getMessage());
+                }
+                
+                // 避免请求过快
+                Thread.sleep(1000);
+            }
+            
+            // 抓取新文章
+            for (int i = 0; i < newArticles.size(); i++) {
+                ZhihuBrowserCrawlerService.ActivityItem item = newArticles.get(i);
+                System.out.println();
+                System.out.println("[" + (i + 1) + "/" + newArticles.size() + "] 抓取文章: " + item.title);
+                
+                try {
+                    ZhihuArticle article = zhihuBrowserCrawlerService.crawlArticleById(item.id);
+                    
+                    if (withComments && article.getCommentCount() > 0 && article.getAuthorId() != null) {
+                        System.out.println("  抓取评论...");
+                        List<ZhihuComment> comments = zhihuBrowserCrawlerService.crawlArticleComments(
+                                article.getId(), article.getAuthorId());
+                        article.setComments(comments);
+                        System.out.println("  获取 " + comments.size() + " 条作者互动评论");
+                    }
+                    
+                    answerSaveService.saveArticle(article, authorName);
+                    savedCount++;
+                    System.out.println("  ✓ 已保存");
+                    
+                } catch (Exception e) {
+                    System.out.println("  ✗ 抓取失败: " + e.getMessage());
+                }
+                
+                // 避免请求过快
+                Thread.sleep(1000);
+            }
+            
+            System.out.println();
+            System.out.println("=== 同步完成 ===");
+            System.out.println("成功保存: " + savedCount + " 条内容");
+            
+            // 更新索引
+            try {
+                java.nio.file.Path indexPath = answerSaveService.updateAuthorIndex(authorName, userId);
+                System.out.println("索引已更新: " + indexPath);
+            } catch (Exception e) {
+                System.out.println("更新索引失败: " + e.getMessage());
+            }
+            
+            return "同步完成！新增 " + savedCount + " 条内容";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "同步失败: " + e.getMessage();
+        }
     }
 }

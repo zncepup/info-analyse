@@ -1204,6 +1204,240 @@ public class ZhihuBrowserCrawlerService {
     }
     
     /**
+     * 用户动态项（回答或文章）
+     */
+    public static class ActivityItem {
+        public String type; // "answer" 或 "article"
+        public String id;
+        public String title;
+        public String url;
+        public int voteupCount;
+        public int commentCount;
+        public LocalDateTime createdTime;
+        public String authorId;
+        public String authorName;
+        
+        // 回答特有
+        public String questionId;
+        public String questionTitle;
+    }
+    
+    /**
+     * 抓取用户动态列表
+     * @param userId 用户ID（如 mr-dang-77）
+     * @param limit 最大抓取数量
+     * @return 动态列表（回答和文章）
+     */
+    public List<ActivityItem> crawlUserActivities(String userId, int limit) {
+        logger.info("开始抓取用户 {} 的动态，限制数量: {}", userId, limit);
+        System.out.println("正在抓取用户 " + userId + " 的动态...");
+        
+        List<ActivityItem> activities = new ArrayList<>();
+        
+        initBrowser();
+        BrowserContext context = createContext();
+        Page page = context.newPage();
+        
+        try {
+            // 先访问用户主页以建立会话
+            String userUrl = "https://www.zhihu.com/people/" + userId;
+            page.navigate(userUrl);
+            page.waitForTimeout(2000);
+            
+            // 使用动态 API
+            String nextUrl = String.format(
+                "https://www.zhihu.com/api/v3/moments/%s/activities?limit=20",
+                userId
+            );
+            
+            java.util.Random random = new java.util.Random();
+            int pageNum = 0;
+            
+            while (nextUrl != null && activities.size() < limit) {
+                pageNum++;
+                System.out.println("获取动态第 " + pageNum + " 页...");
+                
+                String responseJson = (String) page.evaluate(
+                    "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
+                    nextUrl
+                );
+                
+                if (responseJson == null || responseJson.isEmpty()) {
+                    System.out.println("API 响应为空");
+                    break;
+                }
+                
+                try {
+                    JsonNode root = objectMapper.readTree(responseJson);
+                    
+                    if (root.has("error")) {
+                        System.out.println("API 错误: " + root.get("error"));
+                        break;
+                    }
+                    
+                    JsonNode dataArray = root.get("data");
+                    int newCount = 0;
+                    
+                    if (dataArray != null && dataArray.isArray()) {
+                        for (JsonNode activityNode : dataArray) {
+                            if (activities.size() >= limit) break;
+                            
+                            String verb = activityNode.has("verb") ? activityNode.get("verb").asText() : "";
+                            JsonNode target = activityNode.get("target");
+                            
+                            if (target == null) continue;
+                            
+                            ActivityItem item = null;
+                            
+                            if ("MEMBER_ANSWER_QUESTION".equals(verb)) {
+                                // 回答
+                                item = parseActivityAnswer(target);
+                            } else if ("MEMBER_CREATE_ARTICLE".equals(verb)) {
+                                // 文章
+                                item = parseActivityArticle(target);
+                            }
+                            // 忽略 MEMBER_CREATE_PIN（想法）
+                            
+                            if (item != null) {
+                                activities.add(item);
+                                newCount++;
+                            }
+                        }
+                    }
+                    
+                    System.out.println("  新增 " + newCount + " 条，累计: " + activities.size());
+                    
+                    // 分页
+                    JsonNode paging = root.get("paging");
+                    if (paging != null) {
+                        boolean isEnd = paging.has("is_end") && paging.get("is_end").asBoolean();
+                        if (isEnd || activities.size() >= limit) {
+                            nextUrl = null;
+                        } else if (paging.has("next")) {
+                            nextUrl = paging.get("next").asText().replace("\\u0026", "&");
+                        } else {
+                            nextUrl = null;
+                        }
+                    } else {
+                        nextUrl = null;
+                    }
+                    
+                    if (nextUrl != null) {
+                        page.waitForTimeout(1000 + random.nextInt(1000));
+                    }
+                    
+                } catch (Exception e) {
+                    System.out.println("解析动态失败: " + e.getMessage());
+                    logger.warn("解析动态失败", e);
+                    break;
+                }
+            }
+            
+            System.out.println("动态抓取完成，共 " + activities.size() + " 条");
+            return activities;
+            
+        } catch (Exception e) {
+            logger.error("抓取用户动态失败", e);
+            throw new RuntimeException("抓取动态失败: " + e.getMessage(), e);
+        } finally {
+            context.close();
+        }
+    }
+    
+    /**
+     * 解析动态中的回答
+     */
+    private ActivityItem parseActivityAnswer(JsonNode target) {
+        try {
+            ActivityItem item = new ActivityItem();
+            item.type = "answer";
+            item.id = target.get("id").asText();
+            
+            if (target.has("voteup_count")) {
+                item.voteupCount = target.get("voteup_count").asInt();
+            }
+            if (target.has("comment_count")) {
+                item.commentCount = target.get("comment_count").asInt();
+            }
+            
+            JsonNode question = target.get("question");
+            if (question != null) {
+                item.questionId = question.get("id").asText();
+                item.questionTitle = question.get("title").asText();
+                item.title = item.questionTitle;
+            }
+            
+            JsonNode author = target.get("author");
+            if (author != null) {
+                if (author.has("url_token")) {
+                    item.authorId = author.get("url_token").asText();
+                } else {
+                    item.authorId = author.get("id").asText();
+                }
+                item.authorName = author.get("name").asText();
+            }
+            
+            if (target.has("created_time")) {
+                item.createdTime = LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(target.get("created_time").asLong()),
+                    ZoneId.systemDefault());
+            }
+            
+            item.url = String.format("https://www.zhihu.com/question/%s/answer/%s", 
+                item.questionId, item.id);
+            
+            return item;
+        } catch (Exception e) {
+            logger.warn("解析回答动态失败: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * 解析动态中的文章
+     */
+    private ActivityItem parseActivityArticle(JsonNode target) {
+        try {
+            ActivityItem item = new ActivityItem();
+            item.type = "article";
+            item.id = target.get("id").asText();
+            
+            if (target.has("title")) {
+                item.title = target.get("title").asText();
+            }
+            if (target.has("voteup_count")) {
+                item.voteupCount = target.get("voteup_count").asInt();
+            }
+            if (target.has("comment_count")) {
+                item.commentCount = target.get("comment_count").asInt();
+            }
+            
+            JsonNode author = target.get("author");
+            if (author != null) {
+                if (author.has("url_token")) {
+                    item.authorId = author.get("url_token").asText();
+                } else {
+                    item.authorId = author.get("id").asText();
+                }
+                item.authorName = author.get("name").asText();
+            }
+            
+            if (target.has("created")) {
+                item.createdTime = LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(target.get("created").asLong()),
+                    ZoneId.systemDefault());
+            }
+            
+            item.url = "https://zhuanlan.zhihu.com/p/" + item.id;
+            
+            return item;
+        } catch (Exception e) {
+            logger.warn("解析文章动态失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 抓取文章的评论（只保留作者参与的对话）
      */
     public List<ZhihuComment> crawlArticleComments(String articleId, String authorId) {

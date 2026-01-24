@@ -533,6 +533,135 @@ public class AnswerSaveService {
     }
     
     /**
+     * 检查文章是否已保存
+     */
+    public boolean isArticleSaved(String articleId, String authorName) {
+        String safeAuthorName = sanitizeFileName(authorName);
+        Path userDir = Path.of(OUTPUT_DIR, safeAuthorName);
+        if (!Files.exists(userDir)) {
+            return false;
+        }
+        try {
+            return Files.list(userDir)
+                    .anyMatch(p -> p.getFileName().toString().startsWith("article_" + articleId + "_"));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+    
+    /**
+     * 索引项
+     */
+    public static class IndexItem {
+        public String type; // "answer" 或 "article"
+        public String id;
+        public String title;
+        public String fileName;
+        public String url;
+        public int voteupCount;
+        public int commentCount;
+        public java.time.LocalDateTime createdTime;
+    }
+    
+    /**
+     * 生成或更新作者索引文件
+     */
+    public Path updateAuthorIndex(String authorName, String authorId) throws IOException {
+        String safeAuthorName = sanitizeFileName(authorName);
+        Path userDir = Path.of(OUTPUT_DIR, safeAuthorName);
+        
+        if (!Files.exists(userDir)) {
+            logger.warn("作者目录不存在: {}", userDir);
+            return null;
+        }
+        
+        List<IndexItem> items = new ArrayList<>();
+        
+        // 扫描目录中的所有 md 文件
+        try (var stream = Files.list(userDir)) {
+            stream.filter(p -> p.toString().endsWith(".md") && !p.getFileName().toString().equals("INDEX.md"))
+                  .forEach(p -> {
+                      String fileName = p.getFileName().toString();
+                      IndexItem item = new IndexItem();
+                      item.fileName = fileName;
+                      
+                      if (fileName.startsWith("article_")) {
+                          // 文章: article_123456_标题.md
+                          item.type = "article";
+                          String[] parts = fileName.substring(8).split("_", 2);
+                          if (parts.length >= 1) {
+                              item.id = parts[0];
+                              item.url = "https://zhuanlan.zhihu.com/p/" + item.id;
+                          }
+                          if (parts.length >= 2) {
+                              item.title = parts[1].replace(".md", "").replace("_", " ");
+                          }
+                      } else {
+                          // 回答: 123456_问题标题.md
+                          item.type = "answer";
+                          int underscoreIndex = fileName.indexOf('_');
+                          if (underscoreIndex > 0) {
+                              item.id = fileName.substring(0, underscoreIndex);
+                              item.title = fileName.substring(underscoreIndex + 1).replace(".md", "").replace("_", " ");
+                          }
+                      }
+                      
+                      if (item.id != null) {
+                          items.add(item);
+                      }
+                  });
+        }
+        
+        // 按类型和文件名排序
+        items.sort((a, b) -> {
+            int typeCompare = a.type.compareTo(b.type);
+            if (typeCompare != 0) return typeCompare;
+            return b.fileName.compareTo(a.fileName); // 倒序，新的在前
+        });
+        
+        // 生成索引 Markdown
+        StringBuilder md = new StringBuilder();
+        md.append("# ").append(authorName).append(" 的知乎内容索引\n\n");
+        md.append("---\n\n");
+        md.append("- **作者主页**: [https://www.zhihu.com/people/").append(authorId).append("](https://www.zhihu.com/people/").append(authorId).append(")\n");
+        md.append("- **更新时间**: ").append(java.time.LocalDateTime.now().format(DATE_FORMAT)).append("\n");
+        md.append("- **内容总数**: ").append(items.size()).append("\n");
+        md.append("\n---\n\n");
+        
+        // 统计
+        long answerCount = items.stream().filter(i -> "answer".equals(i.type)).count();
+        long articleCount = items.stream().filter(i -> "article".equals(i.type)).count();
+        
+        // 文章列表
+        if (articleCount > 0) {
+            md.append("## 📝 文章 (").append(articleCount).append(")\n\n");
+            for (IndexItem item : items) {
+                if ("article".equals(item.type)) {
+                    md.append("- [").append(item.title != null ? item.title : item.id).append("](").append(item.fileName).append(")\n");
+                }
+            }
+            md.append("\n");
+        }
+        
+        // 回答列表
+        if (answerCount > 0) {
+            md.append("## 💬 回答 (").append(answerCount).append(")\n\n");
+            for (IndexItem item : items) {
+                if ("answer".equals(item.type)) {
+                    md.append("- [").append(item.title != null ? item.title : item.id).append("](").append(item.fileName).append(")\n");
+                }
+            }
+            md.append("\n");
+        }
+        
+        Path indexFile = userDir.resolve("INDEX.md");
+        Files.writeString(indexFile, md.toString());
+        logger.info("已更新索引文件: {}", indexFile);
+        
+        return indexFile;
+    }
+    
+    /**
      * 将文章转换为 Markdown
      */
     private String convertArticleToMarkdown(ZhihuArticle article, Path imagesDir) {
