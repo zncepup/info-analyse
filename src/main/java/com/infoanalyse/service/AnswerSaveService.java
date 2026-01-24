@@ -1,6 +1,7 @@
 package com.infoanalyse.service;
 
 import com.infoanalyse.model.ZhihuAnswer;
+import com.infoanalyse.model.ZhihuComment;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -176,6 +177,32 @@ public class AnswerSaveService {
         } else if (answer.getContent() != null) {
             // 如果没有 HTML 内容，使用纯文本
             md.append(answer.getContent());
+        }
+        
+        // 添加评论部分
+        if (answer.getComments() != null && !answer.getComments().isEmpty()) {
+            md.append("\n\n---\n\n");
+            md.append("## 作者互动评论\n\n");
+            
+            for (ZhihuComment comment : answer.getComments()) {
+                String authorMark = answer.getAuthorId() != null && 
+                        answer.getAuthorId().equals(comment.getAuthorId()) ? " 👤作者" : "";
+                
+                md.append("**").append(comment.getAuthorName()).append("**").append(authorMark);
+                if (comment.getReplyToAuthor() != null) {
+                    md.append(" 回复 **").append(comment.getReplyToAuthor()).append("**");
+                }
+                md.append(":\n\n");
+                md.append("> ").append(comment.getContent().replace("\n", "\n> ")).append("\n\n");
+                
+                if (comment.getCreatedTime() != null) {
+                    md.append("*").append(comment.getCreatedTime().format(DATE_FORMAT)).append("*");
+                }
+                if (comment.getLikeCount() > 0) {
+                    md.append(" | 👍 ").append(comment.getLikeCount());
+                }
+                md.append("\n\n---\n\n");
+            }
         }
         
         return md.toString();

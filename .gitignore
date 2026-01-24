@@ -42,6 +42,9 @@ application-local.properties
 application-dev.properties
 logs/
 
+# Node
+node_modules/
+
 # 爬取数据
 output/
 zhihu_cookies.json

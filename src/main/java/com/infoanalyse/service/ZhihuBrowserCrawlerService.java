@@ -3,6 +3,7 @@ package com.infoanalyse.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.infoanalyse.model.ZhihuAnswer;
+import com.infoanalyse.model.ZhihuComment;
 import com.microsoft.playwright.*;
 import org.jsoup.Jsoup;
 import org.slf4j.Logger;
@@ -13,7 +14,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 基于 Playwright 的知乎数据抓取服务
@@ -209,7 +212,19 @@ public class ZhihuBrowserCrawlerService {
             page.waitForTimeout(5000);
             
             // 检查是否需要登录验证
-            String pageTitle = page.title();
+            String pageTitle = "";
+            try {
+                pageTitle = page.title();
+            } catch (Exception e) {
+                logger.debug("获取页面标题失败，可能正在导航: {}", e.getMessage());
+                page.waitForTimeout(2000);
+                try {
+                    pageTitle = page.title();
+                } catch (Exception e2) {
+                    pageTitle = "";
+                }
+            }
+            
             if (pageTitle.contains("安全验证") || pageTitle.contains("登录")) {
                 logger.warn("知乎要求登录验证...");
                 
@@ -466,5 +481,489 @@ public class ZhihuBrowserCrawlerService {
         }
         
         return answer;
+    }
+    
+    /**
+     * 抓取回答的评论（只保留作者参与的对话）
+     * 使用滚动加载方式，完全模拟人工操作
+     * @param answerId 回答ID
+     * @param authorId 回答作者ID（用于筛选作者参与的评论）
+     * @return 作者参与的评论列表
+     */
+    public List<ZhihuComment> crawlAnswerComments(String answerId, String authorId) {
+        System.out.println("[评论抓取] 开始抓取回答 " + answerId + " 的评论（滚动模式）...");
+        logger.info("开始抓取回答 {} 的评论，筛选作者ID: {}", answerId, authorId);
+        
+        final List<ZhihuComment> allComments = new ArrayList<>();
+        final Map<String, ZhihuComment> commentMap = new HashMap<>();
+        
+        initBrowser();
+        BrowserContext context = createContext();
+        Page page = context.newPage();
+        
+        try {
+            // 访问回答页面
+            String answerUrl = "https://www.zhihu.com/question/0/answer/" + answerId;
+            System.out.println("[评论抓取] 访问回答页面: " + answerUrl);
+            page.navigate(answerUrl);
+            page.waitForTimeout(3000);
+            
+            // 点击"查看全部评论"按钮打开评论区
+            System.out.println("[评论抓取] 查找评论按钮...");
+            
+            // 尝试点击评论按钮
+            String[] commentButtonSelectors = {
+                "button:has-text('条评论')",
+                "[class*='ContentItem-action']:has-text('评论')",
+                "button[class*='Button']:has-text('评论')"
+            };
+            
+            boolean clickedComment = false;
+            for (String selector : commentButtonSelectors) {
+                try {
+                    Locator btn = page.locator(selector).first();
+                    if (btn.isVisible()) {
+                        System.out.println("[评论抓取] 点击评论按钮...");
+                        btn.click();
+                        clickedComment = true;
+                        page.waitForTimeout(2000);
+                        break;
+                    }
+                } catch (Exception e) {
+                    logger.debug("选择器 {} 未找到: {}", selector, e.getMessage());
+                }
+            }
+            
+            if (!clickedComment) {
+                System.out.println("[评论抓取] 未找到评论按钮，尝试直接查找评论区...");
+            }
+            
+            // 等待评论区加载
+            page.waitForTimeout(2000);
+            
+            // 查找评论容器并滚动加载
+            System.out.println("[评论抓取] 开始滚动加载评论...");
+            
+            java.util.Random random = new java.util.Random();
+            int lastCommentCount = 0;
+            int noNewCommentRounds = 0;
+            int maxRounds = 50;  // 最多滚动50次
+            
+            for (int round = 0; round < maxRounds; round++) {
+                // 在评论区内滚动（如果有的话），否则滚动整个页面
+                page.evaluate("() => {" +
+                    "const commentModal = document.querySelector('.css-1xkhpyz, .Comments-container, [class*=\"CommentList\"]');" +
+                    "if (commentModal) {" +
+                    "  commentModal.scrollTop = commentModal.scrollHeight;" +
+                    "} else {" +
+                    "  window.scrollTo(0, document.body.scrollHeight);" +
+                    "}" +
+                    "}");
+                
+                // 随机等待 1-2 秒，模拟人工
+                int delay = 1000 + random.nextInt(1000);
+                page.waitForTimeout(delay);
+                
+                // 从页面提取评论
+                List<ZhihuComment> pageComments = extractCommentsFromPage(page, answerId);
+                
+                // 合并新评论
+                int newCount = 0;
+                for (ZhihuComment comment : pageComments) {
+                    if (!commentMap.containsKey(comment.getId())) {
+                        commentMap.put(comment.getId(), comment);
+                        allComments.add(comment);
+                        newCount++;
+                    }
+                }
+                
+                System.out.println("[评论抓取] 第 " + (round + 1) + " 轮滚动，新增 " + newCount + " 条，累计: " + allComments.size());
+                
+                // 检查是否有新评论
+                if (allComments.size() == lastCommentCount) {
+                    noNewCommentRounds++;
+                    if (noNewCommentRounds >= 3) {
+                        System.out.println("[评论抓取] 连续3轮无新评论，停止滚动");
+                        break;
+                    }
+                } else {
+                    noNewCommentRounds = 0;
+                    lastCommentCount = allComments.size();
+                }
+                
+                // 尝试点击"展开更多"按钮
+                try {
+                    Locator moreBtn = page.locator("button:has-text('展开'), button:has-text('查看更多'), [class*='more']").first();
+                    if (moreBtn.isVisible()) {
+                        moreBtn.click();
+                        page.waitForTimeout(1000);
+                    }
+                } catch (Exception e) {
+                    // 没有更多按钮，继续
+                }
+            }
+            
+            System.out.println("[评论抓取] 滚动完成，共 " + allComments.size() + " 条评论");
+            
+            // 筛选作者参与的评论
+            System.out.println("[评论抓取] 筛选作者参与的评论...");
+            List<ZhihuComment> authorComments = filterAuthorComments(allComments, authorId);
+            
+            System.out.println("[评论抓取] 完成! 共 " + allComments.size() + " 条评论，作者参与 " + authorComments.size() + " 条");
+            logger.info("共抓取 {} 条评论，其中作者参与 {} 条", allComments.size(), authorComments.size());
+            return authorComments;
+            
+        } catch (Exception e) {
+            System.out.println("[评论抓取] 错误: " + e.getMessage());
+            logger.error("抓取评论失败", e);
+            return new ArrayList<>();
+        } finally {
+            context.close();
+        }
+    }
+    
+    /**
+     * 从页面 DOM 中提取评论
+     */
+    private List<ZhihuComment> extractCommentsFromPage(Page page, String answerId) {
+        List<ZhihuComment> comments = new ArrayList<>();
+        
+        try {
+            // 使用 JavaScript 提取评论数据
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> commentData = (List<Map<String, Object>>) page.evaluate(
+                "() => {" +
+                "  const comments = [];" +
+                "  // 查找所有评论元素" +
+                "  const commentEls = document.querySelectorAll('[class*=\"CommentItem\"], [class*=\"comment-item\"], div[data-id]');" +
+                "  commentEls.forEach(el => {" +
+                "    try {" +
+                "      const id = el.getAttribute('data-id') || el.id || '';" +
+                "      if (!id) return;" +
+                "      " +
+                "      // 提取作者信息" +
+                "      const authorEl = el.querySelector('a[href*=\"/people/\"]');" +
+                "      const authorName = authorEl ? authorEl.textContent.trim() : '';" +
+                "      const authorHref = authorEl ? authorEl.getAttribute('href') : '';" +
+                "      const authorId = authorHref ? authorHref.split('/people/')[1]?.split('/')[0]?.split('?')[0] : '';" +
+                "      " +
+                "      // 提取内容" +
+                "      const contentEl = el.querySelector('[class*=\"CommentContent\"], [class*=\"comment-content\"], .RichText');" +
+                "      const content = contentEl ? contentEl.textContent.trim() : '';" +
+                "      " +
+                "      // 提取点赞数" +
+                "      const likeEl = el.querySelector('button[class*=\"like\"], [class*=\"vote\"]');" +
+                "      const likeText = likeEl ? likeEl.textContent.replace(/[^0-9]/g, '') : '0';" +
+                "      const likeCount = parseInt(likeText) || 0;" +
+                "      " +
+                "      // 提取回复对象" +
+                "      const replyEl = el.querySelector('[class*=\"reply-to\"], [class*=\"ReplyTo\"]');" +
+                "      const replyTo = replyEl ? replyEl.textContent.trim() : '';" +
+                "      " +
+                "      // 检查是否是作者" +
+                "      const isAuthor = el.querySelector('[class*=\"author-tag\"], [class*=\"AuthorTag\"]') !== null;" +
+                "      " +
+                "      if (id && content) {" +
+                "        comments.push({ id, authorId, authorName, content, likeCount, replyTo, isAuthor });" +
+                "      }" +
+                "    } catch (e) {}" +
+                "  });" +
+                "  return comments;" +
+                "}"
+            );
+            
+            if (commentData != null) {
+                for (Map<String, Object> data : commentData) {
+                    ZhihuComment comment = new ZhihuComment();
+                    comment.setId(String.valueOf(data.get("id")));
+                    comment.setAnswerId(answerId);
+                    comment.setAuthorId(String.valueOf(data.getOrDefault("authorId", "")));
+                    comment.setAuthorName(String.valueOf(data.getOrDefault("authorName", "")));
+                    comment.setContent(String.valueOf(data.getOrDefault("content", "")));
+                    comment.setLikeCount(((Number) data.getOrDefault("likeCount", 0)).intValue());
+                    
+                    String replyTo = String.valueOf(data.getOrDefault("replyTo", ""));
+                    if (!replyTo.isEmpty() && !"null".equals(replyTo)) {
+                        comment.setReplyToAuthor(replyTo);
+                    }
+                    
+                    comments.add(comment);
+                }
+            }
+            
+        } catch (Exception e) {
+            logger.debug("从页面提取评论失败: {}", e.getMessage());
+        }
+        
+        return comments;
+    }
+    
+    /**
+     * 获取某条评论的所有子评论
+     */
+    private void fetchChildComments(Page page, String answerId, String rootCommentId, String authorId,
+                                    Map<String, ZhihuComment> commentMap, List<ZhihuComment> allComments) {
+        System.out.println("[评论抓取]   获取评论 " + rootCommentId + " 的子评论...");
+        
+        int offset = 0;
+        int limit = 20;
+        boolean hasMore = true;
+        java.util.Random random = new java.util.Random();
+        
+        while (hasMore) {
+            try {
+                // 子评论 API: /api/v4/comment_v5/comment/{rootCommentId}/child_comment
+                String apiUrl = String.format(
+                    "https://www.zhihu.com/api/v4/comment_v5/comment/%s/child_comment?order_by=ts&limit=%d&offset=%d",
+                    rootCommentId, limit, offset
+                );
+                
+                String responseJson = (String) page.evaluate(
+                    "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
+                    apiUrl
+                );
+                
+                if (responseJson == null || responseJson.isEmpty()) {
+                    break;
+                }
+                
+                JsonNode root = objectMapper.readTree(responseJson);
+                
+                if (root.has("error")) {
+                    System.out.println("[评论抓取]     子评论 API 返回错误，停止");
+                    break;
+                }
+                
+                JsonNode dataArray = root.get("data");
+                if (dataArray != null && dataArray.isArray()) {
+                    int newCount = 0;
+                    for (JsonNode commentNode : dataArray) {
+                        ZhihuComment comment = parseComment(commentNode, answerId);
+                        if (comment != null && !commentMap.containsKey(comment.getId())) {
+                            comment.setParentCommentId(rootCommentId);
+                            commentMap.put(comment.getId(), comment);
+                            allComments.add(comment);
+                            newCount++;
+                        }
+                    }
+                    if (newCount > 0) {
+                        System.out.println("[评论抓取]     获取到 " + newCount + " 条子评论");
+                    }
+                }
+                
+                // 检查是否还有更多
+                JsonNode paging = root.get("paging");
+                if (paging != null && paging.has("is_end")) {
+                    hasMore = !paging.get("is_end").asBoolean();
+                } else {
+                    hasMore = dataArray != null && dataArray.size() >= limit;
+                }
+                
+                offset += limit;
+                
+                // 添加随机延迟 (0.5-1秒)
+                if (hasMore) {
+                    page.waitForTimeout(500 + random.nextInt(500));
+                }
+                
+            } catch (Exception e) {
+                logger.debug("获取子评论失败: {}", e.getMessage());
+                break;
+            }
+        }
+    }
+    
+    /**
+     * 解析子评论
+     */
+    private void parseChildComments(JsonNode parentNode, String answerId, String parentId,
+                                    Map<String, ZhihuComment> commentMap, List<ZhihuComment> allComments) {
+        // 尝试不同的子评论字段名
+        String[] childFields = {"child_comments", "child_comment_list", "replies"};
+        
+        for (String field : childFields) {
+            JsonNode childComments = parentNode.get(field);
+            if (childComments != null && childComments.isArray()) {
+                for (JsonNode childNode : childComments) {
+                    ZhihuComment childComment = parseComment(childNode, answerId);
+                    if (childComment != null && !commentMap.containsKey(childComment.getId())) {
+                        childComment.setParentCommentId(parentId);
+                        commentMap.put(childComment.getId(), childComment);
+                        allComments.add(childComment);
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * 从 HTML 解析评论（备用方案）
+     * 根据知乎评论区结构：
+     * - 评论容器: .Comments-container
+     * - 单条评论: div[data-id]
+     * - 作者链接: a 包含 /people/用户ID
+     * - 评论内容: .CommentContent
+     */
+    private List<ZhihuComment> parseCommentsFromHtml(String html, String answerId, String authorId) {
+        List<ZhihuComment> comments = new ArrayList<>();
+        
+        try {
+            org.jsoup.nodes.Document doc = Jsoup.parse(html);
+            
+            // 选择所有带 data-id 的评论元素
+            org.jsoup.select.Elements commentElements = doc.select("div[data-id]");
+            
+            logger.debug("从 HTML 找到 {} 个评论元素", commentElements.size());
+            
+            for (org.jsoup.nodes.Element element : commentElements) {
+                try {
+                    ZhihuComment comment = new ZhihuComment();
+                    
+                    // 获取评论 ID
+                    String id = element.attr("data-id");
+                    if (id.isEmpty()) continue;
+                    
+                    comment.setId(id);
+                    comment.setAnswerId(answerId);
+                    
+                    // 获取作者信息（从链接中提取）
+                    org.jsoup.nodes.Element authorLink = element.selectFirst("a[href*='/people/']");
+                    if (authorLink != null) {
+                        comment.setAuthorName(authorLink.text());
+                        String href = authorLink.attr("href");
+                        if (href.contains("/people/")) {
+                            String userId = href.substring(href.lastIndexOf("/people/") + 8);
+                            comment.setAuthorId(userId);
+                        }
+                    }
+                    
+                    // 获取评论内容
+                    org.jsoup.nodes.Element contentEl = element.selectFirst(".CommentContent");
+                    if (contentEl != null) {
+                        comment.setContent(contentEl.text());
+                    }
+                    
+                    // 获取点赞数（从按钮文本中提取数字）
+                    org.jsoup.nodes.Element likeBtn = element.selectFirst("button:contains(赞), button svg + span");
+                    if (likeBtn != null) {
+                        String likeText = likeBtn.text().replaceAll("[^0-9]", "");
+                        if (!likeText.isEmpty()) {
+                            comment.setLikeCount(Integer.parseInt(likeText));
+                        }
+                    }
+                    
+                    if (comment.getAuthorName() != null && comment.getContent() != null) {
+                        comments.add(comment);
+                    }
+                    
+                } catch (Exception e) {
+                    logger.debug("解析单个评论元素失败: {}", e.getMessage());
+                }
+            }
+            
+        } catch (Exception e) {
+            logger.error("从 HTML 解析评论失败", e);
+        }
+        
+        return comments;
+    }
+    
+    /**
+     * 筛选作者参与的评论（作者的回复 + 被作者回复的评论）
+     */
+    private List<ZhihuComment> filterAuthorComments(List<ZhihuComment> allComments, String authorId) {
+        List<ZhihuComment> result = new ArrayList<>();
+        Map<String, ZhihuComment> commentMap = new HashMap<>();
+        
+        // 建立评论索引
+        for (ZhihuComment comment : allComments) {
+            commentMap.put(comment.getId(), comment);
+        }
+        
+        // 找出作者的所有评论
+        for (ZhihuComment comment : allComments) {
+            if (authorId.equals(comment.getAuthorId())) {
+                // 这是作者的评论
+                result.add(comment);
+                
+                // 如果是回复别人的，把被回复的评论也加入
+                if (comment.getParentCommentId() != null) {
+                    ZhihuComment parent = commentMap.get(comment.getParentCommentId());
+                    if (parent != null && !result.contains(parent)) {
+                        result.add(0, parent); // 父评论放前面
+                    }
+                }
+            }
+        }
+        
+        // 按时间排序
+        result.sort((a, b) -> {
+            if (a.getCreatedTime() == null) return -1;
+            if (b.getCreatedTime() == null) return 1;
+            return a.getCreatedTime().compareTo(b.getCreatedTime());
+        });
+        
+        return result;
+    }
+    
+    /**
+     * 解析评论 JSON
+     */
+    private ZhihuComment parseComment(JsonNode node, String answerId) {
+        try {
+            ZhihuComment comment = new ZhihuComment();
+            
+            comment.setId(node.get("id").asText());
+            comment.setAnswerId(answerId);
+            comment.setContent(node.get("content").asText());
+            
+            if (node.has("like_count")) {
+                comment.setLikeCount(node.get("like_count").asInt());
+            }
+            
+            // 解析作者
+            JsonNode author = node.get("author");
+            if (author != null) {
+                comment.setAuthorId(author.get("id").asText());
+                comment.setAuthorName(author.get("name").asText());
+            }
+            
+            // 解析回复对象
+            JsonNode replyTo = node.get("reply_to_author");
+            if (replyTo != null && !replyTo.isNull()) {
+                comment.setReplyToAuthor(replyTo.get("name").asText());
+            }
+            
+            // 解析时间
+            if (node.has("created_time")) {
+                long timestamp = node.get("created_time").asLong();
+                comment.setCreatedTime(LocalDateTime.ofInstant(
+                        Instant.ofEpochSecond(timestamp),
+                        ZoneId.systemDefault()));
+            }
+            
+            return comment;
+        } catch (Exception e) {
+            logger.warn("解析评论失败: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * 创建浏览器上下文（带 cookies）
+     */
+    private BrowserContext createContext() {
+        java.nio.file.Path cookiesPath = java.nio.file.Path.of(COOKIES_FILE);
+        
+        if (java.nio.file.Files.exists(cookiesPath)) {
+            return browser.newContext(new Browser.NewContextOptions()
+                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .setViewportSize(1920, 1080)
+                    .setStorageStatePath(cookiesPath));
+        } else {
+            return browser.newContext(new Browser.NewContextOptions()
+                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .setViewportSize(1920, 1080));
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.infoanalyse.command;
 
 import com.infoanalyse.model.ZhihuAnswer;
+import com.infoanalyse.model.ZhihuComment;
 import com.infoanalyse.service.AnswerSaveService;
 import com.infoanalyse.service.ZhihuBrowserCrawlerService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,7 +64,8 @@ public class ZhihuCommand {
             @ShellOption(value = "--user-id", help = "知乎用户ID") String userId,
             @ShellOption(value = "--limit", help = "抓取数量限制", defaultValue = "10") int limit,
             @ShellOption(value = "--show-browser", help = "显示浏览器窗口（用于手动登录）", defaultValue = "false") boolean showBrowser,
-            @ShellOption(value = "--save", help = "保存回答为 Markdown 文件（包含图片）", defaultValue = "false") boolean save) {
+            @ShellOption(value = "--save", help = "保存回答为 Markdown 文件（包含图片）", defaultValue = "false") boolean save,
+            @ShellOption(value = "--with-comments", help = "同时抓取作者参与的评论", defaultValue = "false") boolean withComments) {
         
         try {
             if (showBrowser) {
@@ -80,6 +82,25 @@ public class ZhihuCommand {
             System.out.println("抓取完成！共获取 " + answers.size() + " 个回答");
             System.out.println();
             
+            // 如果需要抓取评论
+            if (withComments) {
+                System.out.println("正在抓取作者参与的评论...");
+                
+                for (ZhihuAnswer answer : answers) {
+                    if (answer.getCommentCount() > 0 && answer.getAuthorId() != null) {
+                        try {
+                            System.out.println("  抓取回答 " + answer.getId() + " 的评论...");
+                            List<ZhihuComment> comments = zhihuBrowserCrawlerService.crawlAnswerComments(
+                                    answer.getId(), answer.getAuthorId());
+                            answer.setComments(comments);
+                            System.out.println("    获取 " + comments.size() + " 条作者互动评论");
+                        } catch (Exception e) {
+                            System.out.println("    评论抓取失败: " + e.getMessage());
+                        }
+                    }
+                }
+            }
+            
             // 显示回答详情
             for (int i = 0; i < answers.size(); i++) {
                 ZhihuAnswer answer = answers.get(i);
@@ -93,21 +114,40 @@ public class ZhihuCommand {
                         answer.getContent().substring(0, 100) + "..." : answer.getContent();
                     System.out.printf("内容预览: %s%n", preview);
                 }
+                if (answer.getComments() != null && !answer.getComments().isEmpty()) {
+                    System.out.printf("作者互动评论: %d 条%n", answer.getComments().size());
+                }
                 System.out.println();
             }
             
             // 保存为文件
             if (save) {
                 System.out.println("正在保存回答为 Markdown 文件...");
-                int existingCount = answerSaveService.getSavedAnswerIds(userId).size();
-                List<Path> savedFiles = answerSaveService.saveAnswers(answers, userId);
                 
-                if (savedFiles.isEmpty() && existingCount > 0) {
-                    System.out.println("所有回答都已保存过，无需重复保存");
+                // 如果带评论，强制覆盖保存
+                if (withComments) {
+                    int savedCount = 0;
+                    for (ZhihuAnswer answer : answers) {
+                        try {
+                            answerSaveService.saveAnswer(answer, userId);
+                            savedCount++;
+                        } catch (Exception e) {
+                            System.out.println("保存失败: " + answer.getId() + " - " + e.getMessage());
+                        }
+                    }
+                    System.out.println("保存 " + savedCount + " 个文件到 output/" + userId + "/ 目录（含评论）");
                 } else {
-                    System.out.println("新保存 " + savedFiles.size() + " 个文件到 output/" + userId + "/ 目录");
-                    if (existingCount > 0) {
-                        System.out.println("（跳过 " + (answers.size() - savedFiles.size()) + " 个已保存的回答）");
+                    // 不带评论，跳过已保存的
+                    int existingCount = answerSaveService.getSavedAnswerIds(userId).size();
+                    List<Path> savedFiles = answerSaveService.saveAnswers(answers, userId);
+                    
+                    if (savedFiles.isEmpty() && existingCount > 0) {
+                        System.out.println("所有回答都已保存过，无需重复保存");
+                    } else {
+                        System.out.println("新保存 " + savedFiles.size() + " 个文件到 output/" + userId + "/ 目录");
+                        if (existingCount > 0) {
+                            System.out.println("（跳过 " + (answers.size() - savedFiles.size()) + " 个已保存的回答）");
+                        }
                     }
                 }
             }
@@ -158,15 +198,17 @@ public class ZhihuCommand {
         help.append("【可用命令】\n");
         help.append("zhihu-login                                    - 打开浏览器登录\n");
         help.append("zhihu-save-cookies                             - 保存登录状态\n");
-        help.append("zhihu-user --user-id <用户ID> [--limit <数量>] [--save] - 抓取用户回答\n");
+        help.append("zhihu-user --user-id <用户ID> [选项]           - 抓取用户回答\n");
         help.append("\n【参数说明】\n");
-        help.append("--user-id      知乎用户ID（必填）\n");
-        help.append("--limit        抓取数量，默认10\n");
-        help.append("--save         保存为 Markdown 文件（包含图片）\n");
-        help.append("--show-browser 显示浏览器窗口\n");
+        help.append("--user-id       知乎用户ID（必填）\n");
+        help.append("--limit         抓取数量，默认10\n");
+        help.append("--save          保存为 Markdown 文件（包含图片）\n");
+        help.append("--with-comments 同时抓取作者参与的评论（需配合 --save）\n");
+        help.append("--show-browser  显示浏览器窗口\n");
         help.append("\n【示例】\n");
         help.append("zhihu-user --user-id mr-dang-77 --limit 5\n");
         help.append("zhihu-user --user-id mr-dang-77 --limit 5 --save\n");
+        help.append("zhihu-user --user-id mr-dang-77 --limit 5 --save --with-comments\n");
         
         return help.toString();
     }

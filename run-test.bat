@@ -1,3 +1,2 @@
 @echo off
-echo 正在启动知乎数据抓取应用...
-java -jar target\info-analyse-1.0.0.jar
+echo zhihu-user --user-id mr-dang-77 --limit 1 --save --with-comments | java -jar target/info-analyse-1.0.0.jar
