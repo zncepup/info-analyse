@@ -48,8 +48,9 @@ public class AnswerSaveService {
     /**
      * 检查回答是否已保存
      */
-    public boolean isAnswerSaved(String answerId, String userId) {
-        Path userDir = Path.of(OUTPUT_DIR, userId);
+    public boolean isAnswerSaved(String answerId, String authorName) {
+        String safeAuthorName = sanitizeFileName(authorName);
+        Path userDir = Path.of(OUTPUT_DIR, safeAuthorName);
         if (!Files.exists(userDir)) {
             return false;
         }
@@ -64,9 +65,10 @@ public class AnswerSaveService {
     /**
      * 获取已保存的回答 ID 集合
      */
-    public Set<String> getSavedAnswerIds(String userId) {
+    public Set<String> getSavedAnswerIds(String authorName) {
         Set<String> savedIds = new HashSet<>();
-        Path userDir = Path.of(OUTPUT_DIR, userId);
+        String safeAuthorName = sanitizeFileName(authorName);
+        Path userDir = Path.of(OUTPUT_DIR, safeAuthorName);
         
         if (!Files.exists(userDir)) {
             return savedIds;

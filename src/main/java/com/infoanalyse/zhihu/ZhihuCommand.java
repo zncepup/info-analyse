@@ -125,25 +125,29 @@ public class ZhihuCommand {
             if (save) {
                 System.out.println("正在保存回答为 Markdown 文件...");
                 
+                // 使用第一个回答的作者名称作为文件夹名
+                String authorFolder = answers.isEmpty() ? userId : 
+                    (answers.get(0).getAuthorName() != null ? answers.get(0).getAuthorName() : userId);
+                
                 if (withComments) {
                     int savedCount = 0;
                     for (ZhihuAnswer answer : answers) {
                         try {
-                            answerSaveService.saveAnswer(answer, userId);
+                            answerSaveService.saveAnswer(answer, authorFolder);
                             savedCount++;
                         } catch (Exception e) {
                             System.out.println("保存失败: " + answer.getId() + " - " + e.getMessage());
                         }
                     }
-                    System.out.println("保存 " + savedCount + " 个文件到 output/" + userId + "/ 目录（含评论）");
+                    System.out.println("保存 " + savedCount + " 个文件到 output/" + authorFolder + "/ 目录（含评论）");
                 } else {
-                    int existingCount = answerSaveService.getSavedAnswerIds(userId).size();
-                    List<Path> savedFiles = answerSaveService.saveAnswers(answers, userId);
+                    int existingCount = answerSaveService.getSavedAnswerIds(authorFolder).size();
+                    List<Path> savedFiles = answerSaveService.saveAnswers(answers, authorFolder);
                     
                     if (savedFiles.isEmpty() && existingCount > 0) {
                         System.out.println("所有回答都已保存过，无需重复保存");
                     } else {
-                        System.out.println("新保存 " + savedFiles.size() + " 个文件到 output/" + userId + "/ 目录");
+                        System.out.println("新保存 " + savedFiles.size() + " 个文件到 output/" + authorFolder + "/ 目录");
                     }
                 }
             }
