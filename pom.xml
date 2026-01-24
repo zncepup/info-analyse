@@ -58,6 +58,13 @@
             <version>1.17.2</version>
         </dependency>
 
+        <!-- Playwright for browser automation -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>1.40.0</version>
+        </dependency>
+
         <!-- Command Line Interface -->
         <dependency>
             <groupId>org.springframework.shell</groupId>
@@ -86,6 +93,15 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>com.infoanalyse.ZhihuCrawlerTest</mainClass>
+                    <classpathScope>test</classpathScope>
+                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -1,0 +1,3 @@
+zhihu-help
+zhihu-user --user-id mr-dang-77 --limit 3
+exit

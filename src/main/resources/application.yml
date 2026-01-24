@@ -2,6 +2,10 @@ spring:
   application:
     name: info-analyse
   
+  # 禁用 web 服务器（纯命令行应用）
+  main:
+    web-application-type: none
+  
   # Spring Shell 配置
   shell:
     interactive:

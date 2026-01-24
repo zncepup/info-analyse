@@ -1,0 +1,3 @@
+@echo off
+echo 正在启动知乎数据抓取应用...
+java -jar target\info-analyse-1.0.0.jar

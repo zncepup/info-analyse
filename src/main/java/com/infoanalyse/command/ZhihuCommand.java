@@ -1,8 +1,7 @@
 package com.infoanalyse.command;
 
 import com.infoanalyse.model.ZhihuAnswer;
-import com.infoanalyse.model.ZhihuComment;
-import com.infoanalyse.service.ZhihuCrawlerService;
+import com.infoanalyse.service.ZhihuBrowserCrawlerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
@@ -17,7 +16,39 @@ import java.util.List;
 public class ZhihuCommand {
 
     @Autowired
-    private ZhihuCrawlerService zhihuCrawlerService;
+    private ZhihuBrowserCrawlerService zhihuBrowserCrawlerService;
+
+    /**
+     * 打开浏览器让用户登录知乎
+     */
+    @ShellMethod(value = "打开浏览器登录知乎", key = "zhihu-login")
+    public String login() {
+        try {
+            System.out.println("正在打开浏览器...");
+            
+            zhihuBrowserCrawlerService.setHeadless(false);
+            zhihuBrowserCrawlerService.openBrowserForLogin();
+            
+            return "浏览器已打开，请登录知乎。登录成功后执行 zhihu-save-cookies 保存登录状态。";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "打开浏览器失败: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 保存登录 cookies
+     */
+    @ShellMethod(value = "保存知乎登录状态", key = "zhihu-save-cookies")
+    public String saveCookies() {
+        try {
+            zhihuBrowserCrawlerService.saveCookies();
+            return "登录状态已保存！下次可以直接使用 zhihu-user 抓取数据。";
+        } catch (Exception e) {
+            return "保存失败: " + e.getMessage();
+        }
+    }
 
     /**
      * 抓取指定用户的回答
@@ -25,95 +56,67 @@ public class ZhihuCommand {
     @ShellMethod(value = "抓取知乎用户的回答", key = "zhihu-user")
     public String crawlUserAnswers(
             @ShellOption(value = "--user-id", help = "知乎用户ID") String userId,
-            @ShellOption(value = "--limit", help = "抓取数量限制", defaultValue = "10") int limit) {
+            @ShellOption(value = "--limit", help = "抓取数量限制", defaultValue = "10") int limit,
+            @ShellOption(value = "--show-browser", help = "显示浏览器窗口（用于手动登录）", defaultValue = "false") boolean showBrowser) {
         
         try {
-            System.out.println("正在抓取用户 " + userId + " 的回答...");
+            if (showBrowser) {
+                System.out.println("将打开浏览器窗口，如需登录请在浏览器中完成...");
+                zhihuBrowserCrawlerService.setHeadless(false);
+            } else {
+                zhihuBrowserCrawlerService.setHeadless(true);
+            }
             
-            List<ZhihuAnswer> answers = zhihuCrawlerService.crawlUserAnswers(userId, limit);
+            System.out.println("正在使用浏览器抓取用户 " + userId + " 的回答...");
+            
+            List<ZhihuAnswer> answers = zhihuBrowserCrawlerService.crawlUserAnswers(userId, limit);
             
             System.out.println("抓取完成！共获取 " + answers.size() + " 个回答");
+            System.out.println();
             
-            // 显示回答摘要
-            for (int i = 0; i < Math.min(answers.size(), 5); i++) {
+            // 显示回答详情
+            for (int i = 0; i < answers.size(); i++) {
                 ZhihuAnswer answer = answers.get(i);
-                System.out.printf("[%d] %s (点赞: %d, 评论: %d)%n", 
-                    i + 1, answer.getQuestionTitle(), answer.getVoteupCount(), answer.getCommentCount());
+                System.out.printf("=== 回答 %d ===%n", i + 1);
+                System.out.printf("问题: %s%n", answer.getQuestionTitle());
+                System.out.printf("作者: %s%n", answer.getAuthorName());
+                System.out.printf("点赞: %d | 评论: %d%n", answer.getVoteupCount(), answer.getCommentCount());
+                System.out.printf("链接: %s%n", answer.getUrl());
+                if (answer.getContent() != null && !answer.getContent().isEmpty()) {
+                    String preview = answer.getContent().length() > 100 ? 
+                        answer.getContent().substring(0, 100) + "..." : answer.getContent();
+                    System.out.printf("内容预览: %s%n", preview);
+                }
+                System.out.println();
             }
             
             return "抓取成功！";
             
         } catch (Exception e) {
+            e.printStackTrace();
             return "抓取失败: " + e.getMessage();
         }
     }
 
     /**
-     * 抓取指定回答的评论
+     * 抓取指定回答的评论（暂未实现）
      */
     @ShellMethod(value = "抓取知乎回答的评论", key = "zhihu-comments")
     public String crawlAnswerComments(
             @ShellOption(value = "--answer-id", help = "回答ID") String answerId,
             @ShellOption(value = "--limit", help = "抓取数量限制", defaultValue = "50") int limit) {
         
-        try {
-            System.out.println("正在抓取回答 " + answerId + " 的评论...");
-            
-            List<ZhihuComment> comments = zhihuCrawlerService.crawlAnswerComments(answerId, limit);
-            
-            System.out.println("抓取完成！共获取 " + comments.size() + " 条评论");
-            
-            // 显示评论摘要
-            for (int i = 0; i < Math.min(comments.size(), 5); i++) {
-                ZhihuComment comment = comments.get(i);
-                System.out.printf("[%d] %s: %s (点赞: %d)%n", 
-                    i + 1, comment.getAuthorName(), 
-                    comment.getContent().length() > 50 ? 
-                        comment.getContent().substring(0, 50) + "..." : comment.getContent(),
-                    comment.getLikeCount());
-            }
-            
-            return "抓取成功！";
-            
-        } catch (Exception e) {
-            return "抓取失败: " + e.getMessage();
-        }
+        return "评论抓取功能暂未实现，敬请期待！";
     }
 
     /**
-     * 抓取回答详情（包含评论）
+     * 抓取回答详情（包含评论）（暂未实现）
      */
     @ShellMethod(value = "抓取知乎回答详情（含评论）", key = "zhihu-answer")
     public String crawlAnswerDetail(
             @ShellOption(value = "--answer-id", help = "回答ID") String answerId) {
         
-        try {
-            System.out.println("正在抓取回答 " + answerId + " 的详细信息...");
-            
-            ZhihuAnswer answer = zhihuCrawlerService.crawlAnswerWithComments(answerId);
-            
-            System.out.println("回答信息:");
-            System.out.println("问题: " + answer.getQuestionTitle());
-            System.out.println("作者: " + answer.getAuthorName());
-            System.out.println("点赞: " + answer.getVoteupCount());
-            System.out.println("评论数: " + answer.getCommentCount());
-            System.out.println("内容预览: " + 
-                (answer.getContent().length() > 100 ? 
-                    answer.getContent().substring(0, 100) + "..." : answer.getContent()));
-            
-            if (answer.getComments() != null && !answer.getComments().isEmpty()) {
-                System.out.println("\n评论预览:");
-                for (int i = 0; i < Math.min(answer.getComments().size(), 3); i++) {
-                    ZhihuComment comment = answer.getComments().get(i);
-                    System.out.printf("  %s: %s%n", comment.getAuthorName(), comment.getContent());
-                }
-            }
-            
-            return "抓取成功！";
-            
-        } catch (Exception e) {
-            return "抓取失败: " + e.getMessage();
-        }
+        return "回答详情抓取功能暂未实现，敬请期待！";
     }
 
     /**
@@ -122,14 +125,20 @@ public class ZhihuCommand {
     @ShellMethod(value = "显示知乎抓取功能帮助", key = "zhihu-help")
     public String showHelp() {
         StringBuilder help = new StringBuilder();
-        help.append("知乎数据抓取功能:\n");
-        help.append("1. zhihu-user --user-id <用户ID> [--limit <数量>] - 抓取用户回答\n");
-        help.append("2. zhihu-comments --answer-id <回答ID> [--limit <数量>] - 抓取回答评论\n");
-        help.append("3. zhihu-answer --answer-id <回答ID> - 抓取回答详情（含评论）\n");
-        help.append("\n示例:\n");
-        help.append("zhihu-user --user-id excited-vczh --limit 5\n");
-        help.append("zhihu-comments --answer-id 123456789 --limit 20\n");
-        help.append("zhihu-answer --answer-id 123456789\n");
+        help.append("知乎数据抓取功能 (基于 Playwright 浏览器自动化):\n\n");
+        help.append("【首次使用】\n");
+        help.append("1. zhihu-login          - 打开浏览器\n");
+        help.append("2. 在浏览器中登录知乎\n");
+        help.append("3. zhihu-save-cookies   - 保存登录状态\n");
+        help.append("4. zhihu-user ...       - 抓取数据\n\n");
+        help.append("【已保存登录状态后】\n");
+        help.append("直接使用 zhihu-user 即可抓取数据\n\n");
+        help.append("【可用命令】\n");
+        help.append("zhihu-login                                    - 打开浏览器登录\n");
+        help.append("zhihu-save-cookies                             - 保存登录状态\n");
+        help.append("zhihu-user --user-id <用户ID> [--limit <数量>] - 抓取用户回答\n");
+        help.append("\n【示例】\n");
+        help.append("zhihu-user --user-id mr-dang-77 --limit 5\n");
         
         return help.toString();
     }
