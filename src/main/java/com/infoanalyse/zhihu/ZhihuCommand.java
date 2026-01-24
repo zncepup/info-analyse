@@ -4,12 +4,14 @@ import com.infoanalyse.zhihu.model.ZhihuAnswer;
 import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
 import com.infoanalyse.zhihu.service.AnswerSaveService;
+import com.infoanalyse.zhihu.service.DeepSeekService;
 import com.infoanalyse.zhihu.service.ZhihuBrowserCrawlerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -24,6 +26,9 @@ public class ZhihuCommand {
     
     @Autowired
     private AnswerSaveService answerSaveService;
+    
+    @Autowired
+    private DeepSeekService deepSeekService;
 
     /**
      * 打开浏览器让用户登录知乎
@@ -480,6 +485,61 @@ public class ZhihuCommand {
         } catch (Exception e) {
             e.printStackTrace();
             return "同步失败: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 分析文章提炼投资线索
+     */
+    @ShellMethod(value = "分析文章提炼投资线索", key = "zhihu-analyze")
+    public String analyzeContent(
+            @ShellOption(value = {"--file", "-f"}, help = "要分析的 Markdown 文件路径") String filePath) {
+        
+        try {
+            if (!deepSeekService.isAvailable()) {
+                return "DeepSeek API 未配置，请检查 api-key-file 配置";
+            }
+            
+            Path path = Path.of(filePath);
+            if (!Files.exists(path)) {
+                return "文件不存在: " + filePath;
+            }
+            
+            System.out.println("正在读取文件...");
+            String content = Files.readString(path);
+            
+            // 提取标题（第一行 # 开头的内容）
+            String title = "未知标题";
+            String[] lines = content.split("\n");
+            for (String line : lines) {
+                if (line.startsWith("# ")) {
+                    title = line.substring(2).trim();
+                    break;
+                }
+            }
+            
+            System.out.println("正在分析: " + title);
+            System.out.println("调用 DeepSeek API...");
+            
+            String analysis = deepSeekService.extractInvestmentClues(content, title);
+            
+            System.out.println();
+            System.out.println("=== 投资线索分析 ===");
+            System.out.println();
+            System.out.println(analysis);
+            
+            // 保存分析结果
+            String analysisFileName = path.getFileName().toString().replace(".md", "_analysis.md");
+            Path analysisPath = path.getParent().resolve(analysisFileName);
+            Files.writeString(analysisPath, "# " + title + " - 投资线索分析\n\n" + analysis);
+            System.out.println();
+            System.out.println("分析结果已保存: " + analysisPath);
+            
+            return "分析完成";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "分析失败: " + e.getMessage();
         }
     }
 }

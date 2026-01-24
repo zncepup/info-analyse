@@ -38,3 +38,9 @@ logging:
     org.springframework.web.reactive.function.client: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# DeepSeek API 配置
+deepseek:
+  api-key-file: D:/api.txt
+  base-url: https://api.deepseek.com
+  model: deepseek-chat
