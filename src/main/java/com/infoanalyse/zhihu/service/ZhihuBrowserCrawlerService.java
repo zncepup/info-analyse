@@ -3,6 +3,7 @@ package com.infoanalyse.zhihu.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.infoanalyse.zhihu.model.ZhihuAnswer;
+import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
 import com.microsoft.playwright.*;
 import org.jsoup.Jsoup;
@@ -844,6 +845,380 @@ public class ZhihuBrowserCrawlerService {
             return browser.newContext(new Browser.NewContextOptions()
                     .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                     .setViewportSize(1920, 1080));
+        }
+    }
+    
+    /**
+     * 解析知乎链接，返回类型和ID
+     * @return [type, id] 其中 type 为 "answer" 或 "article"
+     */
+    public String[] parseZhihuUrl(String url) {
+        // 回答链接格式:
+        // https://www.zhihu.com/question/xxx/answer/yyy
+        // https://www.zhihu.com/answer/yyy
+        if (url.contains("/answer/")) {
+            String[] parts = url.split("/answer/");
+            if (parts.length > 1) {
+                String answerId = parts[1].split("[?#]")[0];
+                return new String[]{"answer", answerId};
+            }
+        }
+        
+        // 文章链接格式:
+        // https://zhuanlan.zhihu.com/p/xxx
+        // https://www.zhihu.com/p/xxx
+        if (url.contains("/p/")) {
+            String[] parts = url.split("/p/");
+            if (parts.length > 1) {
+                String articleId = parts[1].split("[?#]")[0];
+                return new String[]{"article", articleId};
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 通过链接抓取单个回答
+     */
+    public ZhihuAnswer crawlAnswerByUrl(String url) {
+        String[] parsed = parseZhihuUrl(url);
+        if (parsed == null || !"answer".equals(parsed[0])) {
+            throw new RuntimeException("无效的回答链接: " + url);
+        }
+        return crawlAnswerById(parsed[1]);
+    }
+    
+    /**
+     * 通过ID抓取单个回答
+     */
+    public ZhihuAnswer crawlAnswerById(String answerId) {
+        logger.info("抓取回答: {}", answerId);
+        System.out.println("正在抓取回答 " + answerId + "...");
+        
+        initBrowser();
+        BrowserContext context = createContext();
+        Page page = context.newPage();
+        
+        try {
+            // 使用 API 获取回答详情
+            String apiUrl = "https://www.zhihu.com/api/v4/answers/" + answerId + 
+                "?include=content,voteup_count,comment_count,created_time,updated_time," +
+                "author.name,question.title";
+            
+            page.navigate("https://www.zhihu.com/answer/" + answerId);
+            page.waitForTimeout(2000);
+            
+            String responseJson = (String) page.evaluate(
+                "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
+                apiUrl
+            );
+            
+            if (responseJson != null && !responseJson.isEmpty()) {
+                JsonNode node = objectMapper.readTree(responseJson);
+                
+                if (!node.has("error")) {
+                    ZhihuAnswer answer = new ZhihuAnswer();
+                    answer.setId(answerId);
+                    
+                    if (node.has("voteup_count")) {
+                        answer.setVoteupCount(node.get("voteup_count").asInt());
+                    }
+                    if (node.has("comment_count")) {
+                        answer.setCommentCount(node.get("comment_count").asInt());
+                    }
+                    
+                    JsonNode question = node.get("question");
+                    if (question != null) {
+                        answer.setQuestionId(question.get("id").asText());
+                        answer.setQuestionTitle(question.get("title").asText());
+                    }
+                    
+                    JsonNode author = node.get("author");
+                    if (author != null) {
+                        answer.setAuthorId(author.get("id").asText());
+                        answer.setAuthorName(author.get("name").asText());
+                    }
+                    
+                    if (node.has("content")) {
+                        String htmlContent = node.get("content").asText();
+                        answer.setHtmlContent(htmlContent);
+                        answer.setContent(Jsoup.parse(htmlContent).text());
+                    }
+                    
+                    if (node.has("created_time")) {
+                        answer.setCreatedTime(LocalDateTime.ofInstant(
+                            Instant.ofEpochSecond(node.get("created_time").asLong()),
+                            ZoneId.systemDefault()));
+                    }
+                    if (node.has("updated_time")) {
+                        answer.setUpdatedTime(LocalDateTime.ofInstant(
+                            Instant.ofEpochSecond(node.get("updated_time").asLong()),
+                            ZoneId.systemDefault()));
+                    }
+                    
+                    answer.setUrl("https://www.zhihu.com/question/" + answer.getQuestionId() + "/answer/" + answerId);
+                    
+                    System.out.println("回答抓取成功: " + answer.getQuestionTitle());
+                    return answer;
+                }
+            }
+            
+            throw new RuntimeException("无法获取回答数据");
+            
+        } catch (Exception e) {
+            logger.error("抓取回答失败", e);
+            throw new RuntimeException("抓取回答失败: " + e.getMessage(), e);
+        } finally {
+            context.close();
+        }
+    }
+    
+    /**
+     * 通过链接抓取文章
+     */
+    public ZhihuArticle crawlArticleByUrl(String url) {
+        String[] parsed = parseZhihuUrl(url);
+        if (parsed == null || !"article".equals(parsed[0])) {
+            throw new RuntimeException("无效的文章链接: " + url);
+        }
+        return crawlArticleById(parsed[1]);
+    }
+    
+    /**
+     * 通过ID抓取文章
+     */
+    public ZhihuArticle crawlArticleById(String articleId) {
+        logger.info("抓取文章: {}", articleId);
+        System.out.println("正在抓取文章 " + articleId + "...");
+        
+        initBrowser();
+        BrowserContext context = createContext();
+        Page page = context.newPage();
+        
+        try {
+            // 使用 API 获取文章详情
+            String apiUrl = "https://www.zhihu.com/api/v4/articles/" + articleId;
+            
+            page.navigate("https://zhuanlan.zhihu.com/p/" + articleId);
+            page.waitForTimeout(2000);
+            
+            String responseJson = (String) page.evaluate(
+                "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
+                apiUrl
+            );
+            
+            if (responseJson != null && !responseJson.isEmpty()) {
+                JsonNode node = objectMapper.readTree(responseJson);
+                
+                if (!node.has("error")) {
+                    ZhihuArticle article = new ZhihuArticle();
+                    article.setId(articleId);
+                    
+                    if (node.has("title")) {
+                        article.setTitle(node.get("title").asText());
+                    }
+                    if (node.has("voteup_count")) {
+                        article.setVoteupCount(node.get("voteup_count").asInt());
+                    }
+                    if (node.has("comment_count")) {
+                        article.setCommentCount(node.get("comment_count").asInt());
+                    }
+                    
+                    JsonNode author = node.get("author");
+                    if (author != null) {
+                        article.setAuthorId(author.get("id").asText());
+                        article.setAuthorName(author.get("name").asText());
+                    }
+                    
+                    if (node.has("content")) {
+                        String htmlContent = node.get("content").asText();
+                        article.setHtmlContent(htmlContent);
+                        article.setContent(Jsoup.parse(htmlContent).text());
+                    }
+                    
+                    if (node.has("created")) {
+                        article.setCreatedTime(LocalDateTime.ofInstant(
+                            Instant.ofEpochSecond(node.get("created").asLong()),
+                            ZoneId.systemDefault()));
+                    }
+                    if (node.has("updated")) {
+                        article.setUpdatedTime(LocalDateTime.ofInstant(
+                            Instant.ofEpochSecond(node.get("updated").asLong()),
+                            ZoneId.systemDefault()));
+                    }
+                    
+                    article.setUrl("https://zhuanlan.zhihu.com/p/" + articleId);
+                    
+                    System.out.println("文章抓取成功: " + article.getTitle());
+                    return article;
+                }
+            }
+            
+            throw new RuntimeException("无法获取文章数据");
+            
+        } catch (Exception e) {
+            logger.error("抓取文章失败", e);
+            throw new RuntimeException("抓取文章失败: " + e.getMessage(), e);
+        } finally {
+            context.close();
+        }
+    }
+    
+    /**
+     * 抓取文章的评论（只保留作者参与的对话）
+     */
+    public List<ZhihuComment> crawlArticleComments(String articleId, String authorId) {
+        System.out.println("[评论抓取] 开始抓取文章 " + articleId + " 的评论...");
+        logger.info("开始抓取文章 {} 的评论，筛选作者ID: {}", articleId, authorId);
+        
+        final List<ZhihuComment> allComments = new ArrayList<>();
+        final Map<String, ZhihuComment> commentMap = new HashMap<>();
+        final List<String[]> pendingChildComments = new ArrayList<>();
+        
+        initBrowser();
+        BrowserContext context = createContext();
+        Page page = context.newPage();
+        
+        try {
+            String articleUrl = "https://zhuanlan.zhihu.com/p/" + articleId;
+            System.out.println("[评论抓取] 访问文章页面: " + articleUrl);
+            page.navigate(articleUrl);
+            page.waitForTimeout(2000);
+            
+            System.out.println("[评论抓取] === 第一阶段：获取根评论 ===");
+            
+            // 文章评论 API
+            String nextUrl = String.format(
+                "https://www.zhihu.com/api/v4/comment_v5/articles/%s/root_comment?order_by=score&limit=20",
+                articleId
+            );
+            
+            java.util.Random random = new java.util.Random();
+            int pageNum = 0;
+            
+            while (nextUrl != null) {
+                pageNum++;
+                System.out.println("[评论抓取] 根评论第 " + pageNum + " 页...");
+                
+                String responseJson = (String) page.evaluate(
+                    "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
+                    nextUrl
+                );
+                
+                if (responseJson == null || responseJson.isEmpty()) {
+                    break;
+                }
+                
+                try {
+                    JsonNode root = objectMapper.readTree(responseJson);
+                    
+                    if (root.has("error")) {
+                        System.out.println("[评论抓取] API 错误: " + root.get("error"));
+                        break;
+                    }
+                    
+                    JsonNode dataArray = root.get("data");
+                    int newCount = 0;
+                    
+                    if (dataArray != null && dataArray.isArray()) {
+                        for (JsonNode commentNode : dataArray) {
+                            ZhihuComment comment = parseCommentV5(commentNode, articleId);
+                            if (comment != null && !commentMap.containsKey(comment.getId())) {
+                                commentMap.put(comment.getId(), comment);
+                                allComments.add(comment);
+                                newCount++;
+                                
+                                JsonNode childComments = commentNode.get("child_comments");
+                                int loadedChildCount = 0;
+                                if (childComments != null && childComments.isArray()) {
+                                    for (JsonNode childNode : childComments) {
+                                        ZhihuComment childComment = parseCommentV5(childNode, articleId);
+                                        if (childComment != null && !commentMap.containsKey(childComment.getId())) {
+                                            childComment.setParentCommentId(comment.getId());
+                                            commentMap.put(childComment.getId(), childComment);
+                                            allComments.add(childComment);
+                                            newCount++;
+                                            loadedChildCount++;
+                                        }
+                                    }
+                                }
+                                
+                                int totalChildCount = commentNode.has("child_comment_count") 
+                                    ? commentNode.get("child_comment_count").asInt() : 0;
+                                if (totalChildCount > loadedChildCount) {
+                                    pendingChildComments.add(new String[]{
+                                        comment.getId(), 
+                                        String.valueOf(totalChildCount), 
+                                        String.valueOf(loadedChildCount)
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    
+                    System.out.println("[评论抓取]   新增 " + newCount + " 条，累计: " + allComments.size());
+                    
+                    JsonNode paging = root.get("paging");
+                    if (paging != null) {
+                        boolean isEnd = paging.has("is_end") && paging.get("is_end").asBoolean();
+                        if (isEnd) {
+                            System.out.println("[评论抓取] 根评论已全部获取");
+                            nextUrl = null;
+                        } else if (paging.has("next")) {
+                            nextUrl = paging.get("next").asText().replace("\\u0026", "&");
+                        } else {
+                            nextUrl = null;
+                        }
+                    } else {
+                        nextUrl = null;
+                    }
+                    
+                    if (nextUrl != null) {
+                        page.waitForTimeout(1000 + random.nextInt(1000));
+                    }
+                    
+                } catch (Exception e) {
+                    System.out.println("[评论抓取] 解析失败: " + e.getMessage());
+                    break;
+                }
+            }
+            
+            if (!pendingChildComments.isEmpty()) {
+                System.out.println("[评论抓取] === 第二阶段：获取完整子评论 ===");
+                System.out.println("[评论抓取] 有 " + pendingChildComments.size() + " 条根评论需要获取更多子评论");
+                
+                int processed = 0;
+                for (String[] pending : pendingChildComments) {
+                    String rootCommentId = pending[0];
+                    int totalChild = Integer.parseInt(pending[1]);
+                    int loadedChild = Integer.parseInt(pending[2]);
+                    
+                    processed++;
+                    System.out.println("[评论抓取] 获取子评论 " + processed + "/" + pendingChildComments.size() 
+                        + " (已有" + loadedChild + "/" + totalChild + ")");
+                    
+                    fetchAllChildComments(page, rootCommentId, articleId, commentMap, allComments, random);
+                    
+                    page.waitForTimeout(800 + random.nextInt(700));
+                }
+            }
+            
+            System.out.println("[评论抓取] 全部获取完成，共 " + allComments.size() + " 条评论");
+            
+            System.out.println("[评论抓取] 筛选作者参与的评论...");
+            List<ZhihuComment> authorComments = filterAuthorCommentsWithHierarchy(allComments, authorId, commentMap);
+            
+            System.out.println("[评论抓取] 完成! 共 " + allComments.size() + " 条评论，作者参与 " + authorComments.size() + " 条");
+            logger.info("共抓取 {} 条评论，其中作者参与 {} 条", allComments.size(), authorComments.size());
+            return authorComments;
+            
+        } catch (Exception e) {
+            System.out.println("[评论抓取] 错误: " + e.getMessage());
+            logger.error("抓取评论失败", e);
+            return new ArrayList<>();
+        } finally {
+            context.close();
         }
     }
 }

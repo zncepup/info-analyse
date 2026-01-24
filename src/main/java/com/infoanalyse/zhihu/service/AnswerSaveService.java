@@ -1,6 +1,7 @@
 package com.infoanalyse.zhihu.service;
 
 import com.infoanalyse.zhihu.model.ZhihuAnswer;
+import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -26,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 回答保存服务 - 将回答保存为 Markdown 文件，包含图片
+ * 回答/文章保存服务 - 将内容保存为 Markdown 文件，包含图片
  */
 @Service
 public class AnswerSaveService {
@@ -500,5 +501,105 @@ public class AnswerSaveService {
             md.append("> ").append(content != null ? content.replace("\n", "\n> ") : "").append("\n\n");
             md.append("*").append(timeStr).append("*").append(likeStr).append("\n\n");
         }
+    }
+    
+    /**
+     * 保存文章为 Markdown 文件
+     */
+    public Path saveArticle(ZhihuArticle article, String userId) throws IOException {
+        Path userDir = Path.of(OUTPUT_DIR, userId);
+        Files.createDirectories(userDir);
+        
+        Path imagesDir = userDir.resolve("images");
+        Files.createDirectories(imagesDir);
+        
+        String safeTitle = sanitizeFileName(article.getTitle());
+        if (safeTitle.length() > 50) {
+            safeTitle = safeTitle.substring(0, 50);
+        }
+        String fileName = "article_" + article.getId() + "_" + safeTitle + ".md";
+        Path mdFile = userDir.resolve(fileName);
+        
+        String markdown = convertArticleToMarkdown(article, imagesDir);
+        
+        Files.writeString(mdFile, markdown);
+        logger.info("已保存文章到: {}", mdFile);
+        
+        return mdFile;
+    }
+    
+    /**
+     * 将文章转换为 Markdown
+     */
+    private String convertArticleToMarkdown(ZhihuArticle article, Path imagesDir) {
+        StringBuilder md = new StringBuilder();
+        
+        md.append("# ").append(article.getTitle()).append("\n\n");
+        md.append("---\n\n");
+        md.append("- **作者**: ").append(article.getAuthorName() != null ? article.getAuthorName() : "未知").append("\n");
+        md.append("- **点赞**: ").append(article.getVoteupCount()).append("\n");
+        md.append("- **评论**: ").append(article.getCommentCount()).append("\n");
+        if (article.getCreatedTime() != null) {
+            md.append("- **创建时间**: ").append(article.getCreatedTime().format(DATE_FORMAT)).append("\n");
+        }
+        if (article.getUpdatedTime() != null) {
+            md.append("- **更新时间**: ").append(article.getUpdatedTime().format(DATE_FORMAT)).append("\n");
+        }
+        md.append("- **原文链接**: [").append(article.getUrl()).append("](").append(article.getUrl()).append(")\n");
+        md.append("\n---\n\n");
+        
+        String htmlContent = article.getHtmlContent();
+        if (htmlContent != null && !htmlContent.isEmpty()) {
+            md.append(htmlToMarkdown(htmlContent, imagesDir, article.getId()));
+        } else if (article.getContent() != null) {
+            md.append(article.getContent());
+        }
+        
+        // 添加评论部分
+        if (article.getComments() != null && !article.getComments().isEmpty()) {
+            md.append("\n\n---\n\n");
+            md.append("## 作者互动评论\n\n");
+            
+            java.util.Map<String, List<ZhihuComment>> childrenMap = new java.util.HashMap<>();
+            List<ZhihuComment> rootComments = new ArrayList<>();
+            
+            for (ZhihuComment comment : article.getComments()) {
+                if (comment.getParentCommentId() == null) {
+                    rootComments.add(comment);
+                } else {
+                    childrenMap.computeIfAbsent(comment.getParentCommentId(), k -> new ArrayList<>())
+                              .add(comment);
+                }
+            }
+            
+            rootComments.sort((a, b) -> {
+                if (a.getCreatedTime() == null) return 1;
+                if (b.getCreatedTime() == null) return -1;
+                return a.getCreatedTime().compareTo(b.getCreatedTime());
+            });
+            
+            for (List<ZhihuComment> children : childrenMap.values()) {
+                children.sort((a, b) -> {
+                    if (a.getCreatedTime() == null) return 1;
+                    if (b.getCreatedTime() == null) return -1;
+                    return a.getCreatedTime().compareTo(b.getCreatedTime());
+                });
+            }
+            
+            for (ZhihuComment rootComment : rootComments) {
+                appendComment(md, rootComment, article.getAuthorId(), false);
+                
+                List<ZhihuComment> children = childrenMap.get(rootComment.getId());
+                if (children != null) {
+                    for (ZhihuComment child : children) {
+                        appendComment(md, child, article.getAuthorId(), true);
+                    }
+                }
+                
+                md.append("---\n\n");
+            }
+        }
+        
+        return md.toString();
     }
 }
