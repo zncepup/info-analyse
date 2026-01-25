@@ -11,6 +11,8 @@
 - ✅ 抓取作者参与的评论（父子关系展示）
 - ✅ 保存为 Markdown 文件（含图片下载）
 - ✅ **自动生成作者内容索引（INDEX.md）**
+- ✅ **DeepSeek AI 自动提炼投资线索**
+- ✅ **Markdown 导出为 Word 文档**
 - ✅ Cookies 持久化登录
 - ✅ 交互式命令行界面（Spring Shell）
 
@@ -20,6 +22,8 @@
 - Spring Boot 3.2.1
 - Spring Shell 3.2.1
 - Playwright 1.40.0（浏览器自动化）
+- Apache POI 5.2.5（Word 文档生成）
+- DeepSeek API（AI 分析）
 - Maven 3.9.12
 
 ## 快速开始
@@ -98,6 +102,42 @@ zhihu-sync --user-id mr-dang-77 --limit 50 --with-comments
 - 自动生成/更新 `INDEX.md` 索引文件
 - 支持的动态类型：回答（MEMBER_ANSWER_QUESTION）、文章（MEMBER_CREATE_ARTICLE）
 
+### AI 分析投资线索
+
+```bash
+# 分析单个文件
+zhihu-analyze --file output/MR_Dang/xxx.md
+
+# 批量分析作者所有文章
+zhihu-analyze-all --author MR_Dang --delay 3
+```
+
+参数说明：
+- `--file`: 要分析的 Markdown 文件路径
+- `--author`: 作者文件夹名称
+- `--delay`: 每篇文章分析间隔秒数（默认3秒）
+
+功能说明：
+- 使用 DeepSeek API 自动提炼投资线索
+- 分析结果追加到原文档末尾
+- 自动跳过已分析的文件
+- 提取核心观点、提及标的、市场判断、风险提示、操作建议
+
+### 导出 Word 文档
+
+```bash
+# 导出单个文件
+export-word --file output/MR_Dang/xxx.md
+
+# 批量导出作者所有文章
+export-word-all --author MR_Dang
+```
+
+功能说明：
+- 将 Markdown 文件转换为 Word 文档
+- 保留图片、表格、格式
+- 批量导出到 `output/<作者名>/word/` 目录
+
 ### 退出应用
 
 ```bash
@@ -115,8 +155,11 @@ output/
     ├── images/                    # 图片目录
     │   ├── 123456_1.jpg
     │   └── 123456_2.jpg
-    ├── 123456_问题标题.md         # 回答文件
-    └── article_789_文章标题.md    # 文章文件
+    ├── word/                      # Word 文档目录
+    │   ├── 123456_问题标题.docx
+    │   └── article_789_文章标题.docx
+    ├── 123456_问题标题.md         # 回答文件（含 AI 分析）
+    └── article_789_文章标题.md    # 文章文件（含 AI 分析）
 ```
 
 ### INDEX.md 索引文件
@@ -149,21 +192,39 @@ output/
 - 元信息（作者、点赞、评论数、时间、链接）
 - 正文内容（图片已下载到本地）
 - 作者互动评论（按父子关系展示）
+- AI 投资线索分析（由 DeepSeek 自动生成）
+
+## 配置
+
+### DeepSeek API 配置
+
+在 `application.yml` 中配置：
+
+```yaml
+deepseek:
+  api-key-file: D:/api.txt  # API Key 文件路径
+  base-url: https://api.deepseek.com
+  model: deepseek-chat
+```
 
 ## 项目结构
 
 ```
 src/main/java/com/infoanalyse/
 ├── InfoAnalyseApplication.java
+├── commons/
+│   └── service/
+│       └── WordExportService.java       # Word 导出服务
 └── zhihu/
-    ├── ZhihuCommand.java                    # 命令行接口
+    ├── ZhihuCommand.java                # 命令行接口
     ├── model/
-    │   ├── ZhihuAnswer.java                 # 回答模型
-    │   ├── ZhihuArticle.java                # 文章模型
-    │   └── ZhihuComment.java                # 评论模型
+    │   ├── ZhihuAnswer.java             # 回答模型
+    │   ├── ZhihuArticle.java            # 文章模型
+    │   └── ZhihuComment.java            # 评论模型
     └── service/
         ├── ZhihuBrowserCrawlerService.java  # Playwright 爬虫服务
-        └── AnswerSaveService.java           # 文件保存服务
+        ├── AnswerSaveService.java           # 文件保存服务
+        └── DeepSeekService.java             # DeepSeek AI 服务
 ```
 
 ## 注意事项
