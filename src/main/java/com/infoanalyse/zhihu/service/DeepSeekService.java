@@ -29,7 +29,7 @@ public class DeepSeekService {
     @Value("${deepseek.base-url:https://api.deepseek.com}")
     private String baseUrl;
     
-    @Value("${deepseek.model:deepseek-chat}")
+    @Value("${deepseek.model:deepseek-reasoner}")
     private String model;
     
     private String apiKey;

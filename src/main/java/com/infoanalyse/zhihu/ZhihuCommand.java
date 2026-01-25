@@ -5,6 +5,7 @@ import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
 import com.infoanalyse.zhihu.service.AnswerSaveService;
 import com.infoanalyse.zhihu.service.DeepSeekService;
+import com.infoanalyse.commons.service.WordExportService;
 import com.infoanalyse.zhihu.service.ZhihuBrowserCrawlerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.shell.standard.ShellComponent;
@@ -29,6 +30,9 @@ public class ZhihuCommand {
     
     @Autowired
     private DeepSeekService deepSeekService;
+    
+    @Autowired
+    private WordExportService wordExportService;
 
     /**
      * 打开浏览器让用户登录知乎
@@ -634,6 +638,84 @@ public class ZhihuCommand {
         } catch (Exception e) {
             e.printStackTrace();
             return "批量分析失败: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 导出 Markdown 为 Word 文档
+     */
+    @ShellMethod(value = "导出 Markdown 为 Word 文档", key = "export-word")
+    public String exportWord(
+            @ShellOption(value = {"--file", "-f"}, help = "要导出的 Markdown 文件路径") String filePath) {
+        
+        try {
+            Path path = Path.of(filePath);
+            if (!Files.exists(path)) {
+                return "文件不存在: " + filePath;
+            }
+            
+            System.out.println("正在导出: " + path.getFileName());
+            Path outputPath = wordExportService.exportToWord(path);
+            System.out.println("导出成功: " + outputPath);
+            
+            return "导出完成";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "导出失败: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 批量导出作者所有文章为 Word
+     */
+    @ShellMethod(value = "批量导出作者所有文章为 Word", key = "export-word-all")
+    public String exportWordAll(
+            @ShellOption(value = {"--author", "-a"}, help = "作者文件夹名称") String authorName) {
+        
+        try {
+            Path authorDir = Path.of("output", authorName);
+            if (!Files.exists(authorDir)) {
+                return "作者目录不存在: " + authorDir;
+            }
+            
+            // 获取所有 md 文件（排除 INDEX.md）
+            java.util.List<Path> mdFiles = Files.list(authorDir)
+                    .filter(p -> p.toString().endsWith(".md"))
+                    .filter(p -> !p.getFileName().toString().equals("INDEX.md"))
+                    .sorted()
+                    .collect(java.util.stream.Collectors.toList());
+            
+            System.out.println("找到 " + mdFiles.size() + " 个文件待导出");
+            System.out.println();
+            
+            int success = 0;
+            int failed = 0;
+            
+            for (int i = 0; i < mdFiles.size(); i++) {
+                Path file = mdFiles.get(i);
+                String fileName = file.getFileName().toString();
+                System.out.print("[" + (i + 1) + "/" + mdFiles.size() + "] " + fileName + " ... ");
+                
+                try {
+                    wordExportService.exportToWord(file);
+                    System.out.println("✓");
+                    success++;
+                } catch (Exception e) {
+                    System.out.println("✗ " + e.getMessage());
+                    failed++;
+                }
+            }
+            
+            System.out.println();
+            System.out.println("=== 批量导出完成 ===");
+            System.out.println("成功: " + success + ", 失败: " + failed);
+            
+            return "批量导出完成";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "批量导出失败: " + e.getMessage();
         }
     }
 }

@@ -43,4 +43,4 @@ logging:
 deepseek:
   api-key-file: D:/api.txt
   base-url: https://api.deepseek.com
-  model: deepseek-chat
+  model: deepseek-reasoner
