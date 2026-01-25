@@ -679,6 +679,10 @@ public class ZhihuCommand {
                 return "作者目录不存在: " + authorDir;
             }
             
+            // Word 文件输出到 word 子目录
+            Path wordDir = authorDir.resolve("word");
+            Files.createDirectories(wordDir);
+            
             // 获取所有 md 文件（排除 INDEX.md）
             java.util.List<Path> mdFiles = Files.list(authorDir)
                     .filter(p -> p.toString().endsWith(".md"))
@@ -687,6 +691,7 @@ public class ZhihuCommand {
                     .collect(java.util.stream.Collectors.toList());
             
             System.out.println("找到 " + mdFiles.size() + " 个文件待导出");
+            System.out.println("输出目录: " + wordDir);
             System.out.println();
             
             int success = 0;
@@ -698,7 +703,7 @@ public class ZhihuCommand {
                 System.out.print("[" + (i + 1) + "/" + mdFiles.size() + "] " + fileName + " ... ");
                 
                 try {
-                    wordExportService.exportToWord(file);
+                    wordExportService.exportToWord(file, wordDir);
                     System.out.println("✓");
                     success++;
                 } catch (Exception e) {
@@ -710,6 +715,7 @@ public class ZhihuCommand {
             System.out.println();
             System.out.println("=== 批量导出完成 ===");
             System.out.println("成功: " + success + ", 失败: " + failed);
+            System.out.println("输出目录: " + wordDir);
             
             return "批量导出完成";
             

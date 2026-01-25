@@ -30,10 +30,24 @@ public class WordExportService {
      * 将 Markdown 文件导出为 Word 文档
      */
     public Path exportToWord(Path mdFile) throws Exception {
+        return exportToWord(mdFile, null);
+    }
+    
+    /**
+     * 将 Markdown 文件导出为 Word 文档到指定目录
+     */
+    public Path exportToWord(Path mdFile, Path outputDir) throws Exception {
         String content = Files.readString(mdFile);
         Path parentDir = mdFile.getParent();
         String fileName = mdFile.getFileName().toString().replace(".md", ".docx");
-        Path outputPath = parentDir.resolve(fileName);
+        
+        Path outputPath;
+        if (outputDir != null) {
+            Files.createDirectories(outputDir);
+            outputPath = outputDir.resolve(fileName);
+        } else {
+            outputPath = parentDir.resolve(fileName);
+        }
         
         try (XWPFDocument document = new XWPFDocument()) {
             String[] lines = content.split("\n");
