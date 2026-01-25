@@ -508,6 +508,11 @@ public class ZhihuCommand {
             System.out.println("正在读取文件...");
             String content = Files.readString(path);
             
+            // 检查是否已经分析过
+            if (content.contains("## AI 投资线索分析")) {
+                return "该文件已包含 AI 分析结果，跳过";
+            }
+            
             // 提取标题（第一行 # 开头的内容）
             String title = "未知标题";
             String[] lines = content.split("\n");
@@ -528,18 +533,107 @@ public class ZhihuCommand {
             System.out.println();
             System.out.println(analysis);
             
-            // 保存分析结果
-            String analysisFileName = path.getFileName().toString().replace(".md", "_analysis.md");
-            Path analysisPath = path.getParent().resolve(analysisFileName);
-            Files.writeString(analysisPath, "# " + title + " - 投资线索分析\n\n" + analysis);
+            // 将分析结果追加到原文档末尾
+            String analysisSection = "\n\n---\n\n## AI 投资线索分析\n\n> 由 DeepSeek 自动生成\n\n" + analysis;
+            Files.writeString(path, content + analysisSection);
             System.out.println();
-            System.out.println("分析结果已保存: " + analysisPath);
+            System.out.println("分析结果已追加到原文档: " + path);
             
             return "分析完成";
             
         } catch (Exception e) {
             e.printStackTrace();
             return "分析失败: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 批量分析作者所有文章
+     */
+    @ShellMethod(value = "批量分析作者所有文章", key = "zhihu-analyze-all")
+    public String analyzeAll(
+            @ShellOption(value = {"--author", "-a"}, help = "作者文件夹名称") String authorName,
+            @ShellOption(value = {"--delay"}, defaultValue = "3", help = "每篇文章分析间隔(秒)") int delay) {
+        
+        try {
+            if (!deepSeekService.isAvailable()) {
+                return "DeepSeek API 未配置，请检查 api-key-file 配置";
+            }
+            
+            Path authorDir = Path.of("output", authorName);
+            if (!Files.exists(authorDir)) {
+                return "作者目录不存在: " + authorDir;
+            }
+            
+            // 获取所有 md 文件（排除 INDEX.md 和已分析的文件）
+            java.util.List<Path> mdFiles = Files.list(authorDir)
+                    .filter(p -> p.toString().endsWith(".md"))
+                    .filter(p -> !p.getFileName().toString().equals("INDEX.md"))
+                    .filter(p -> !p.getFileName().toString().endsWith("_analysis.md"))
+                    .sorted()
+                    .collect(java.util.stream.Collectors.toList());
+            
+            System.out.println("找到 " + mdFiles.size() + " 个文件待分析");
+            System.out.println();
+            
+            int analyzed = 0;
+            int skipped = 0;
+            int failed = 0;
+            
+            for (int i = 0; i < mdFiles.size(); i++) {
+                Path file = mdFiles.get(i);
+                String fileName = file.getFileName().toString();
+                System.out.println("[" + (i + 1) + "/" + mdFiles.size() + "] " + fileName);
+                
+                try {
+                    String content = Files.readString(file);
+                    
+                    // 检查是否已分析
+                    if (content.contains("## AI 投资线索分析")) {
+                        System.out.println("  已分析，跳过");
+                        skipped++;
+                        continue;
+                    }
+                    
+                    // 提取标题
+                    String title = "未知标题";
+                    for (String line : content.split("\n")) {
+                        if (line.startsWith("# ")) {
+                            title = line.substring(2).trim();
+                            break;
+                        }
+                    }
+                    
+                    System.out.println("  分析中: " + title);
+                    String analysis = deepSeekService.extractInvestmentClues(content, title);
+                    
+                    // 追加到原文档
+                    String analysisSection = "\n\n---\n\n## AI 投资线索分析\n\n> 由 DeepSeek 自动生成\n\n" + analysis;
+                    Files.writeString(file, content + analysisSection);
+                    
+                    System.out.println("  ✓ 完成");
+                    analyzed++;
+                    
+                    // 延迟避免 API 限流
+                    if (i < mdFiles.size() - 1) {
+                        Thread.sleep(delay * 1000L);
+                    }
+                    
+                } catch (Exception e) {
+                    System.out.println("  ✗ 失败: " + e.getMessage());
+                    failed++;
+                }
+            }
+            
+            System.out.println();
+            System.out.println("=== 批量分析完成 ===");
+            System.out.println("成功: " + analyzed + ", 跳过: " + skipped + ", 失败: " + failed);
+            
+            return "批量分析完成";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "批量分析失败: " + e.getMessage();
         }
     }
 }
