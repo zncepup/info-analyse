@@ -1,24 +1,46 @@
-spring:
+﻿spring:
   application:
     name: info-analyse
+  autoconfigure:
+    exclude:
+      - org.springframework.shell.boot.StandardAPIAutoConfiguration
+      - org.springframework.shell.boot.ParameterResolverAutoConfiguration
+      - org.springframework.shell.boot.ComponentFlowAutoConfiguration
+      - org.springframework.shell.boot.JLineShellAutoConfiguration
+      - org.springframework.shell.boot.TerminalUIAutoConfiguration
+      - org.springframework.shell.boot.JLineAutoConfiguration
+      - org.springframework.shell.boot.SpringShellAutoConfiguration
+      - org.springframework.shell.boot.CompleterAutoConfiguration
+      - org.springframework.shell.boot.CommandCatalogAutoConfiguration
+      - org.springframework.shell.boot.ShellRunnerAutoConfiguration
+      - org.springframework.shell.boot.ShellContextAutoConfiguration
+      - org.springframework.shell.boot.ApplicationRunnerAutoConfiguration
+      - org.springframework.shell.boot.ExitCodeAutoConfiguration
+      - org.springframework.shell.boot.UserConfigAutoConfiguration
+      - org.springframework.shell.boot.StandardCommandsAutoConfiguration
+      - org.springframework.shell.boot.LineReaderAutoConfiguration
+      - org.springframework.shell.boot.ThemingAutoConfiguration
   
-  # 禁用 web 服务器（纯命令行应用）
+  # 绂佺敤 web 鏈嶅姟鍣紙绾懡浠よ搴旂敤锛?
   main:
-    web-application-type: none
+    web-application-type: reactive
   
-  # Spring Shell 配置
+  # Spring Shell 閰嶇疆
   shell:
+    enabled: false
     interactive:
-      enabled: true
+      enabled: false
+    history:
+      enabled: false
     noninteractive:
       enabled: false
 
-# 应用配置
+# 搴旂敤閰嶇疆
 app:
-  name: 投资信息分析系统
+  name: 鎶曡祫淇℃伅鍒嗘瀽绯荤粺
   version: 1.0.0
   
-# 知乎抓取配置
+# 鐭ヤ箮鎶撳彇閰嶇疆
 zhihu:
   base-url: https://www.zhihu.com
   api-base-url: https://www.zhihu.com/api/v4
@@ -31,16 +53,25 @@ zhihu:
     accept: application/json, text/plain, */*
     accept-language: zh-CN,zh;q=0.9,en;q=0.8
 
-# 日志配置
+# 鏃ュ織閰嶇疆
 logging:
+  file:
+    name: info-analyse.log
   level:
     com.infoanalyse: INFO
     org.springframework.web.reactive.function.client: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
-# DeepSeek API 配置
+# DeepSeek API 閰嶇疆
 deepseek:
   api-key-file: D:/api.txt
   base-url: https://api.deepseek.com
   model: deepseek-reasoner
+
+server:
+  address: 0.0.0.0
+
+
+
+
