@@ -385,11 +385,9 @@
                 <strong id="status-cookies">--</strong>
               </div>
               <div class="actions">
-                <button class="btn btn-primary" type="button" data-action="login">打开登录浏览器</button>
-                <button class="btn btn-outline" type="button" data-action="save-cookies">保存 Cookies</button>
                 <button class="btn btn-ghost" type="button" data-action="refresh-status">刷新状态</button>
               </div>
-              <div class="hint">若提示需要登录，请点击“打开登录浏览器”，完成登录后再保存 Cookies。</div>
+              <div class="hint">若提示需要登录，请使用下方“扫码登录”完成授权，系统会自动保存 Cookies。</div>
               <div class="qr-login-box">
                 <div class="actions">
                   <button class="btn btn-primary" type="button" data-action="start-qr-login">扫码登录</button>
@@ -851,27 +849,6 @@
         exportList.appendChild(li);
       });
     };
-
-    document.querySelector('[data-action="login"]').addEventListener('click', async () => {
-      try {
-        await postJson('/api/zhihu/login');
-        showToast('登录浏览器已打开');
-        refreshTasks();
-      } catch (e) {
-        showToast(e.message || '操作失败');
-      }
-    });
-
-    document.querySelector('[data-action="save-cookies"]').addEventListener('click', async () => {
-      try {
-        await postJson('/api/zhihu/save-cookies');
-        showToast('Cookies 已保存');
-        refreshStatus();
-        refreshTasks();
-      } catch (e) {
-        showToast(e.message || '保存失败');
-      }
-    });
 
     document.querySelector('[data-action="start-qr-login"]').addEventListener('click', async () => {
       try {
