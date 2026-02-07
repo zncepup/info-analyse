@@ -1,9 +1,5 @@
 package com.infoanalyse.web.controller;
 
-import com.infoanalyse.dao.mapper.AiAnalysisDOMapper;
-import com.infoanalyse.dao.mapper.ZhihuAnswerDOMapper;
-import com.infoanalyse.dao.mapper.ZhihuArticleDOMapper;
-import com.infoanalyse.dao.model.*;
 import com.infoanalyse.zhihu.ZhihuCommand;
 import com.infoanalyse.zhihu.service.ZhihuBrowserCrawlerService;
 import com.infoanalyse.web.task.TaskInfo;
@@ -14,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -23,21 +18,12 @@ public class ZhihuApiController {
     private final TaskService taskService;
     private final ZhihuCommand zhihuCommand;
     private final ZhihuBrowserCrawlerService crawlerService;
-    private final ZhihuAnswerDOMapper answerMapper;
-    private final ZhihuArticleDOMapper articleMapper;
-    private final AiAnalysisDOMapper aiAnalysisMapper;
 
     public ZhihuApiController(TaskService taskService, ZhihuCommand zhihuCommand,
-                              ZhihuBrowserCrawlerService crawlerService,
-                              ZhihuAnswerDOMapper answerMapper,
-                              ZhihuArticleDOMapper articleMapper,
-                              AiAnalysisDOMapper aiAnalysisMapper) {
+                              ZhihuBrowserCrawlerService crawlerService) {
         this.taskService = taskService;
         this.zhihuCommand = zhihuCommand;
         this.crawlerService = crawlerService;
-        this.answerMapper = answerMapper;
-        this.articleMapper = articleMapper;
-        this.aiAnalysisMapper = aiAnalysisMapper;
     }
 
     @GetMapping("/status")
@@ -105,11 +91,7 @@ public class ZhihuApiController {
         params.put("withComments", withComments);
 
         return taskService.submit("zhihu-user", "抓取用户回答", params,
-                () -> {
-                    String result = zhihuCommand.crawlUserAnswers(request.userId, limit, showBrowser, save, withComments);
-                    String analysis = save ? autoAnalyzeNewContent() : "自动分析: 已关闭";
-                    return result + " | " + analysis;
-                });
+                () -> zhihuCommand.crawlUserAnswers(request.userId, limit, showBrowser, save, withComments));
     }
 
     @PostMapping("/fetch")
@@ -124,11 +106,7 @@ public class ZhihuApiController {
         params.put("withComments", withComments);
 
         return taskService.submit("zhihu-fetch", "抓取链接内容", params,
-                () -> {
-                    String result = zhihuCommand.fetchByUrl(request.url, save, withComments);
-                    String analysis = save ? autoAnalyzeNewContent() : "自动分析: 已关闭";
-                    return result + " | " + analysis;
-                });
+                () -> zhihuCommand.fetchByUrl(request.url, save, withComments));
     }
 
     @PostMapping("/sync")
@@ -143,11 +121,7 @@ public class ZhihuApiController {
         params.put("withComments", withComments);
 
         return taskService.submit("zhihu-sync", "同步用户动态", params,
-                () -> {
-                    String result = zhihuCommand.syncUserActivities(request.userId, limit, withComments);
-                    String analysis = autoAnalyzeNewContent();
-                    return result + " | " + analysis;
-                });
+                () -> zhihuCommand.syncUserActivities(request.userId, limit, withComments));
     }
 
     @PostMapping("/analyze")
@@ -158,17 +132,6 @@ public class ZhihuApiController {
                 () -> zhihuCommand.analyzeContent(request.file));
     }
 
-    @PostMapping("/analyze-all")
-    public TaskInfo analyzeAll(@RequestBody AnalyzeAllRequest request) {
-        require(request.author, "author is required");
-        int delay = request.delay == null ? 3 : request.delay;
-        Map<String, Object> params = new HashMap<>();
-        params.put("author", request.author);
-        params.put("delay", delay);
-        return taskService.submit("zhihu-analyze-all", "批量分析作者内容", params,
-                () -> zhihuCommand.analyzeAll(request.author, delay));
-    }
-
     @PostMapping("/export-word")
     public TaskInfo exportWord(@RequestBody ExportRequest request) {
         require(request.file, "file is required");
@@ -177,61 +140,10 @@ public class ZhihuApiController {
                 () -> zhihuCommand.exportWord(request.file));
     }
 
-    @PostMapping("/export-word-all")
-    public TaskInfo exportWordAll(@RequestBody ExportAllRequest request) {
-        require(request.author, "author is required");
-        Map<String, Object> params = Map.of("author", request.author);
-        return taskService.submit("export-word-all", "批量导出 Word", params,
-                () -> zhihuCommand.exportWordAll(request.author));
-    }
-
     private void require(String value, String message) {
         if (value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
         }
-    }
-
-    private String autoAnalyzeNewContent() {
-        // 查询DB中没有AI分析结果的知乎回答和文章
-        int analyzed = 0;
-        int failed = 0;
-
-        // 查找未分析的回答
-        List<ZhihuAnswerDO> answers = answerMapper.selectByExample(new ZhihuAnswerDOExample());
-        for (ZhihuAnswerDO a : answers) {
-            if (!hasAnalysis("zhihu", a.getAnswerId(), "answer")) {
-                try {
-                    String result = zhihuCommand.analyzeContentFromDb("zhihu", a.getAnswerId(), "answer");
-                    if (result != null && result.contains("完成")) analyzed++;
-                } catch (Exception e) { failed++; }
-            }
-        }
-
-        // 查找未分析的文章
-        List<ZhihuArticleDO> articles = articleMapper.selectByExample(new ZhihuArticleDOExample());
-        for (ZhihuArticleDO a : articles) {
-            if (!hasAnalysis("zhihu", a.getArticleId(), "article")) {
-                try {
-                    String result = zhihuCommand.analyzeContentFromDb("zhihu", a.getArticleId(), "article");
-                    if (result != null && result.contains("完成")) analyzed++;
-                } catch (Exception e) { failed++; }
-            }
-        }
-
-        if (analyzed == 0 && failed == 0) return "自动分析: 无新增内容";
-        if (failed > 0) return "自动分析: 已分析 " + analyzed + " 篇，失败 " + failed + " 篇";
-        return "自动分析: 已分析 " + analyzed + " 篇";
-    }
-
-    private boolean hasAnalysis(String source, Long targetId, String targetType) {
-        AiAnalysisDOExample example = new AiAnalysisDOExample();
-        example.createCriteria()
-                .andSourceEqualTo(source)
-                .andTargetIdEqualTo(targetId)
-                .andTargetTypeEqualTo(targetType)
-                .andAiModelEqualTo("deepseek-reasoner")
-                .andAnalysisTypeEqualTo("investment_clue");
-        return aiAnalysisMapper.countByExample(example) > 0;
     }
 
     private QrLoginResponse toQrResponse(ZhihuBrowserCrawlerService.QrLoginSnapshot snapshot) {
@@ -270,17 +182,8 @@ public class ZhihuApiController {
         public String file;
     }
 
-    public static class AnalyzeAllRequest {
-        public String author;
-        public Integer delay;
-    }
-
     public static class ExportRequest {
         public String file;
-    }
-
-    public static class ExportAllRequest {
-        public String author;
     }
 
     public record QrLoginResponse(

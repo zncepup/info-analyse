@@ -600,7 +600,7 @@
         taskList.innerHTML = '<li class="task-item empty">暂无任务</li>';
         return;
       }
-      tasks.slice(0, 8).forEach(task => {
+      tasks.slice(0, 20).forEach(task => {
         const li = document.createElement('li');
         li.className = 'task-item';
         const message = task.error || task.message || '';
@@ -624,25 +624,70 @@
       }
     };
 
+    let allFiles = [];
+    let filePageSize = 20;
+    let filePageIndex = 0;
+
     const renderFiles = (files) => {
+      allFiles = files;
+      filePageIndex = 0;
+      renderFilePage();
+    };
+
+    const renderFilePage = () => {
       fileList.innerHTML = '';
-      if (!files.length) {
+      if (!allFiles.length) {
         fileList.innerHTML = '<li class="file-item empty">该作者暂无内容</li>';
         return;
       }
-      files.slice(0, 30).forEach((file) => {
+      const start = filePageIndex * filePageSize;
+      const page = allFiles.slice(start, start + filePageSize);
+      page.forEach((file) => {
         const li = document.createElement('li');
         li.className = 'file-item';
         const typeLabel = file.type === 'article' ? '文章' : file.type === 'answer' ? '回答' : file.type === 'guba_post' ? '股吧' : file.type;
         const analyzed = file.analyzed ? ' · ✅ 已分析' : '';
+        // 构建 analyze target: source/type/id
+        let analyzeTarget = file.relativePath; // e.g. "zhihu/answer/12345"
         li.innerHTML = `
           <span>
             <a class="file-link" href="${file.viewUrl}" target="_blank">${file.name || '未知标题'}</a><br>
             <small>${typeLabel}${analyzed} · ${formatTime(file.lastModified)}</small>
           </span>
+          <span class="file-actions">
+            ${!file.analyzed ? `<button class="primary" onclick="analyzeFile('${analyzeTarget}')">AI分析</button>` : ''}
+          </span>
         `;
         fileList.appendChild(li);
       });
+      // 分页控制
+      const totalPages = Math.ceil(allFiles.length / filePageSize);
+      if (totalPages > 1) {
+        const nav = document.createElement('li');
+        nav.className = 'file-item';
+        nav.style.justifyContent = 'center';
+        nav.style.gap = '8px';
+        nav.innerHTML = `
+          <button class="btn btn-ghost" ${filePageIndex <= 0 ? 'disabled' : ''} onclick="filePagePrev()">上一页</button>
+          <span style="font-size:0.85rem;color:var(--muted)">${filePageIndex + 1} / ${totalPages}（共 ${allFiles.length} 条）</span>
+          <button class="btn btn-ghost" ${filePageIndex >= totalPages - 1 ? 'disabled' : ''} onclick="filePageNext()">下一页</button>
+        `;
+        fileList.appendChild(nav);
+      }
+    };
+
+    const filePagePrev = () => { if (filePageIndex > 0) { filePageIndex--; renderFilePage(); } };
+    const filePageNext = () => { const totalPages = Math.ceil(allFiles.length / filePageSize); if (filePageIndex < totalPages - 1) { filePageIndex++; renderFilePage(); } };
+
+    const analyzeFile = async (target) => {
+      try {
+        // target is like "zhihu/answer/12345"
+        await postJson('/api/zhihu/analyze', { file: target });
+        showToast('AI分析任务已创建');
+        refreshTasks();
+      } catch (e) {
+        showToast(e.message || '分析任务创建失败');
+      }
     };
 
     const refreshFiles = async (author) => {

@@ -1,5 +1,6 @@
 package com.infoanalyse.web.task;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.Collections;
 import java.util.Map;
 
@@ -16,6 +17,8 @@ public class TaskInfo {
     private volatile String error;
     private volatile Long startedAt;
     private volatile Long finishedAt;
+    @JsonIgnore
+    private volatile Long dbId;
 
     public TaskInfo(String id, String type, String title, Map<String, Object> params, long createdAt) {
         this.id = id;
@@ -69,6 +72,18 @@ public class TaskInfo {
 
     public Long getFinishedAt() {
         return finishedAt;
+    }
+
+    public Long getDbId() {
+        return dbId;
+    }
+
+    public void setDbId(Long dbId) {
+        this.dbId = dbId;
+    }
+
+    public void setFinishedAtFromDb(long millis) {
+        this.finishedAt = millis;
     }
 
     public void markRunning() {
