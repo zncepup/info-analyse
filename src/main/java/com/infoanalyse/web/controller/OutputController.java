@@ -64,21 +64,6 @@ public class OutputController {
             authors.add(new AuthorInfo(entry.getKey(), total, 0, counts[2]));
         }
 
-        // 股吧: 按 stockCode+stockName 分组
-        List<GubaPostDO> posts = gubaPostMapper.selectByExample(new GubaPostDOExample());
-        Map<String, long[]> gubaGroups = new LinkedHashMap<>();
-        for (GubaPostDO p : posts) {
-            String key = "guba_" + (p.getStockCode() != null ? p.getStockCode() : "unknown");
-            if (p.getStockName() != null) key += "_" + p.getStockName();
-            gubaGroups.computeIfAbsent(key, k -> new long[]{0, 0});
-            gubaGroups.get(key)[0]++;
-            long ct = p.getCrawlTime() != null ? toEpochMilli(p.getCrawlTime()) : 0;
-            if (ct > gubaGroups.get(key)[1]) gubaGroups.get(key)[1] = ct;
-        }
-        for (Map.Entry<String, long[]> entry : gubaGroups.entrySet()) {
-            authors.add(new AuthorInfo(entry.getKey(), (int) entry.getValue()[0], 0, entry.getValue()[1]));
-        }
-
         authors.sort(Comparator.comparingLong(AuthorInfo::lastModified).reversed());
         return authors;
     }
