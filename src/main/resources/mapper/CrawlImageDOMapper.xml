@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infoanalyse.dao.mapper.CrawlImageDOMapper">
+  <resultMap id="BaseResultMap" type="com.infoanalyse.dao.model.CrawlImageDO">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="source" jdbcType="VARCHAR" property="source" />
+    <result column="target_id" jdbcType="BIGINT" property="targetId" />
+    <result column="target_type" jdbcType="VARCHAR" property="targetType" />
+    <result column="original_url" jdbcType="VARCHAR" property="originalUrl" />
+    <result column="local_path" jdbcType="VARCHAR" property="localPath" />
+    <result column="file_size" jdbcType="INTEGER" property="fileSize" />
+    <result column="sort_order" jdbcType="INTEGER" property="sortOrder" />
+    <result column="download_status" jdbcType="TINYINT" property="downloadStatus" />
+    <result column="crawl_time" jdbcType="TIMESTAMP" property="crawlTime" />
+  </resultMap>
+  <sql id="Example_Where_Clause">
+    <where>
+      <foreach collection="oredCriteria" item="criteria" separator="or">
+        <if test="criteria.valid">
+          <trim prefix="(" prefixOverrides="and" suffix=")">
+            <foreach collection="criteria.criteria" item="criterion">
+              <choose>
+                <when test="criterion.noValue">
+                  and ${criterion.condition}
+                </when>
+                <when test="criterion.singleValue">
+                  and ${criterion.condition} #{criterion.value}
+                </when>
+                <when test="criterion.betweenValue">
+                  and ${criterion.condition} #{criterion.value} and #{criterion.secondValue}
+                </when>
+                <when test="criterion.listValue">
+                  and ${criterion.condition}
+                  <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                    #{listItem}
+                  </foreach>
+                </when>
+              </choose>
+            </foreach>
+          </trim>
+        </if>
+      </foreach>
+    </where>
+  </sql>
+  <sql id="Update_By_Example_Where_Clause">
+    <where>
+      <foreach collection="example.oredCriteria" item="criteria" separator="or">
+        <if test="criteria.valid">
+          <trim prefix="(" prefixOverrides="and" suffix=")">
+            <foreach collection="criteria.criteria" item="criterion">
+              <choose>
+                <when test="criterion.noValue">
+                  and ${criterion.condition}
+                </when>
+                <when test="criterion.singleValue">
+                  and ${criterion.condition} #{criterion.value}
+                </when>
+                <when test="criterion.betweenValue">
+                  and ${criterion.condition} #{criterion.value} and #{criterion.secondValue}
+                </when>
+                <when test="criterion.listValue">
+                  and ${criterion.condition}
+                  <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                    #{listItem}
+                  </foreach>
+                </when>
+              </choose>
+            </foreach>
+          </trim>
+        </if>
+      </foreach>
+    </where>
+  </sql>
+  <sql id="Base_Column_List">
+    id, source, target_id, target_type, original_url, local_path, file_size, sort_order, 
+    download_status, crawl_time
+  </sql>
+  <select id="selectByExample" parameterType="com.infoanalyse.dao.model.CrawlImageDOExample" resultMap="BaseResultMap">
+    select
+    <if test="distinct">
+      distinct
+    </if>
+    <include refid="Base_Column_List" />
+    from crawl_image
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+    <if test="orderByClause != null">
+      order by ${orderByClause}
+    </if>
+  </select>
+  <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
+    select 
+    <include refid="Base_Column_List" />
+    from crawl_image
+    where id = #{id,jdbcType=BIGINT}
+  </select>
+  <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">
+    delete from crawl_image
+    where id = #{id,jdbcType=BIGINT}
+  </delete>
+  <delete id="deleteByExample" parameterType="com.infoanalyse.dao.model.CrawlImageDOExample">
+    delete from crawl_image
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </delete>
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="com.infoanalyse.dao.model.CrawlImageDO" useGeneratedKeys="true">
+    insert into crawl_image (source, target_id, target_type, 
+      original_url, local_path, file_size, 
+      sort_order, download_status, crawl_time
+      )
+    values (#{source,jdbcType=VARCHAR}, #{targetId,jdbcType=BIGINT}, #{targetType,jdbcType=VARCHAR}, 
+      #{originalUrl,jdbcType=VARCHAR}, #{localPath,jdbcType=VARCHAR}, #{fileSize,jdbcType=INTEGER}, 
+      #{sortOrder,jdbcType=INTEGER}, #{downloadStatus,jdbcType=TINYINT}, #{crawlTime,jdbcType=TIMESTAMP}
+      )
+  </insert>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="com.infoanalyse.dao.model.CrawlImageDO" useGeneratedKeys="true">
+    insert into crawl_image
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="source != null">
+        source,
+      </if>
+      <if test="targetId != null">
+        target_id,
+      </if>
+      <if test="targetType != null">
+        target_type,
+      </if>
+      <if test="originalUrl != null">
+        original_url,
+      </if>
+      <if test="localPath != null">
+        local_path,
+      </if>
+      <if test="fileSize != null">
+        file_size,
+      </if>
+      <if test="sortOrder != null">
+        sort_order,
+      </if>
+      <if test="downloadStatus != null">
+        download_status,
+      </if>
+      <if test="crawlTime != null">
+        crawl_time,
+      </if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="source != null">
+        #{source,jdbcType=VARCHAR},
+      </if>
+      <if test="targetId != null">
+        #{targetId,jdbcType=BIGINT},
+      </if>
+      <if test="targetType != null">
+        #{targetType,jdbcType=VARCHAR},
+      </if>
+      <if test="originalUrl != null">
+        #{originalUrl,jdbcType=VARCHAR},
+      </if>
+      <if test="localPath != null">
+        #{localPath,jdbcType=VARCHAR},
+      </if>
+      <if test="fileSize != null">
+        #{fileSize,jdbcType=INTEGER},
+      </if>
+      <if test="sortOrder != null">
+        #{sortOrder,jdbcType=INTEGER},
+      </if>
+      <if test="downloadStatus != null">
+        #{downloadStatus,jdbcType=TINYINT},
+      </if>
+      <if test="crawlTime != null">
+        #{crawlTime,jdbcType=TIMESTAMP},
+      </if>
+    </trim>
+  </insert>
+  <select id="countByExample" parameterType="com.infoanalyse.dao.model.CrawlImageDOExample" resultType="java.lang.Long">
+    select count(*) from crawl_image
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
+  <update id="updateByExampleSelective" parameterType="map">
+    update crawl_image
+    <set>
+      <if test="row.id != null">
+        id = #{row.id,jdbcType=BIGINT},
+      </if>
+      <if test="row.source != null">
+        source = #{row.source,jdbcType=VARCHAR},
+      </if>
+      <if test="row.targetId != null">
+        target_id = #{row.targetId,jdbcType=BIGINT},
+      </if>
+      <if test="row.targetType != null">
+        target_type = #{row.targetType,jdbcType=VARCHAR},
+      </if>
+      <if test="row.originalUrl != null">
+        original_url = #{row.originalUrl,jdbcType=VARCHAR},
+      </if>
+      <if test="row.localPath != null">
+        local_path = #{row.localPath,jdbcType=VARCHAR},
+      </if>
+      <if test="row.fileSize != null">
+        file_size = #{row.fileSize,jdbcType=INTEGER},
+      </if>
+      <if test="row.sortOrder != null">
+        sort_order = #{row.sortOrder,jdbcType=INTEGER},
+      </if>
+      <if test="row.downloadStatus != null">
+        download_status = #{row.downloadStatus,jdbcType=TINYINT},
+      </if>
+      <if test="row.crawlTime != null">
+        crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP},
+      </if>
+    </set>
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByExample" parameterType="map">
+    update crawl_image
+    set id = #{row.id,jdbcType=BIGINT},
+      source = #{row.source,jdbcType=VARCHAR},
+      target_id = #{row.targetId,jdbcType=BIGINT},
+      target_type = #{row.targetType,jdbcType=VARCHAR},
+      original_url = #{row.originalUrl,jdbcType=VARCHAR},
+      local_path = #{row.localPath,jdbcType=VARCHAR},
+      file_size = #{row.fileSize,jdbcType=INTEGER},
+      sort_order = #{row.sortOrder,jdbcType=INTEGER},
+      download_status = #{row.downloadStatus,jdbcType=TINYINT},
+      crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP}
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByPrimaryKeySelective" parameterType="com.infoanalyse.dao.model.CrawlImageDO">
+    update crawl_image
+    <set>
+      <if test="source != null">
+        source = #{source,jdbcType=VARCHAR},
+      </if>
+      <if test="targetId != null">
+        target_id = #{targetId,jdbcType=BIGINT},
+      </if>
+      <if test="targetType != null">
+        target_type = #{targetType,jdbcType=VARCHAR},
+      </if>
+      <if test="originalUrl != null">
+        original_url = #{originalUrl,jdbcType=VARCHAR},
+      </if>
+      <if test="localPath != null">
+        local_path = #{localPath,jdbcType=VARCHAR},
+      </if>
+      <if test="fileSize != null">
+        file_size = #{fileSize,jdbcType=INTEGER},
+      </if>
+      <if test="sortOrder != null">
+        sort_order = #{sortOrder,jdbcType=INTEGER},
+      </if>
+      <if test="downloadStatus != null">
+        download_status = #{downloadStatus,jdbcType=TINYINT},
+      </if>
+      <if test="crawlTime != null">
+        crawl_time = #{crawlTime,jdbcType=TIMESTAMP},
+      </if>
+    </set>
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+  <update id="updateByPrimaryKey" parameterType="com.infoanalyse.dao.model.CrawlImageDO">
+    update crawl_image
+    set source = #{source,jdbcType=VARCHAR},
+      target_id = #{targetId,jdbcType=BIGINT},
+      target_type = #{targetType,jdbcType=VARCHAR},
+      original_url = #{originalUrl,jdbcType=VARCHAR},
+      local_path = #{localPath,jdbcType=VARCHAR},
+      file_size = #{fileSize,jdbcType=INTEGER},
+      sort_order = #{sortOrder,jdbcType=INTEGER},
+      download_status = #{downloadStatus,jdbcType=TINYINT},
+      crawl_time = #{crawlTime,jdbcType=TIMESTAMP}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+</mapper>

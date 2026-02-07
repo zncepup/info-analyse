@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infoanalyse.dao.mapper.AiAnalysisDOMapper">
+  <resultMap id="BaseResultMap" type="com.infoanalyse.dao.model.AiAnalysisDO">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="source" jdbcType="VARCHAR" property="source" />
+    <result column="target_id" jdbcType="BIGINT" property="targetId" />
+    <result column="target_type" jdbcType="VARCHAR" property="targetType" />
+    <result column="ai_model" jdbcType="VARCHAR" property="aiModel" />
+    <result column="analysis_type" jdbcType="VARCHAR" property="analysisType" />
+    <result column="prompt_digest" jdbcType="VARCHAR" property="promptDigest" />
+    <result column="status" jdbcType="VARCHAR" property="status" />
+    <result column="created_time" jdbcType="TIMESTAMP" property="createdTime" />
+  </resultMap>
+  <resultMap extends="BaseResultMap" id="ResultMapWithBLOBs" type="com.infoanalyse.dao.model.AiAnalysisDO">
+    <result column="result" jdbcType="LONGVARCHAR" property="result" />
+    <result column="error_message" jdbcType="LONGVARCHAR" property="errorMessage" />
+  </resultMap>
+  <sql id="Example_Where_Clause">
+    <where>
+      <foreach collection="oredCriteria" item="criteria" separator="or">
+        <if test="criteria.valid">
+          <trim prefix="(" prefixOverrides="and" suffix=")">
+            <foreach collection="criteria.criteria" item="criterion">
+              <choose>
+                <when test="criterion.noValue">
+                  and ${criterion.condition}
+                </when>
+                <when test="criterion.singleValue">
+                  and ${criterion.condition} #{criterion.value}
+                </when>
+                <when test="criterion.betweenValue">
+                  and ${criterion.condition} #{criterion.value} and #{criterion.secondValue}
+                </when>
+                <when test="criterion.listValue">
+                  and ${criterion.condition}
+                  <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                    #{listItem}
+                  </foreach>
+                </when>
+              </choose>
+            </foreach>
+          </trim>
+        </if>
+      </foreach>
+    </where>
+  </sql>
+  <sql id="Update_By_Example_Where_Clause">
+    <where>
+      <foreach collection="example.oredCriteria" item="criteria" separator="or">
+        <if test="criteria.valid">
+          <trim prefix="(" prefixOverrides="and" suffix=")">
+            <foreach collection="criteria.criteria" item="criterion">
+              <choose>
+                <when test="criterion.noValue">
+                  and ${criterion.condition}
+                </when>
+                <when test="criterion.singleValue">
+                  and ${criterion.condition} #{criterion.value}
+                </when>
+                <when test="criterion.betweenValue">
+                  and ${criterion.condition} #{criterion.value} and #{criterion.secondValue}
+                </when>
+                <when test="criterion.listValue">
+                  and ${criterion.condition}
+                  <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                    #{listItem}
+                  </foreach>
+                </when>
+              </choose>
+            </foreach>
+          </trim>
+        </if>
+      </foreach>
+    </where>
+  </sql>
+  <sql id="Base_Column_List">
+    id, source, target_id, target_type, ai_model, analysis_type, prompt_digest, status, 
+    created_time
+  </sql>
+  <sql id="Blob_Column_List">
+    result, error_message
+  </sql>
+  <select id="selectByExampleWithBLOBs" parameterType="com.infoanalyse.dao.model.AiAnalysisDOExample" resultMap="ResultMapWithBLOBs">
+    select
+    <if test="distinct">
+      distinct
+    </if>
+    <include refid="Base_Column_List" />
+    ,
+    <include refid="Blob_Column_List" />
+    from ai_analysis
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+    <if test="orderByClause != null">
+      order by ${orderByClause}
+    </if>
+  </select>
+  <select id="selectByExample" parameterType="com.infoanalyse.dao.model.AiAnalysisDOExample" resultMap="BaseResultMap">
+    select
+    <if test="distinct">
+      distinct
+    </if>
+    <include refid="Base_Column_List" />
+    from ai_analysis
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+    <if test="orderByClause != null">
+      order by ${orderByClause}
+    </if>
+  </select>
+  <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="ResultMapWithBLOBs">
+    select 
+    <include refid="Base_Column_List" />
+    ,
+    <include refid="Blob_Column_List" />
+    from ai_analysis
+    where id = #{id,jdbcType=BIGINT}
+  </select>
+  <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">
+    delete from ai_analysis
+    where id = #{id,jdbcType=BIGINT}
+  </delete>
+  <delete id="deleteByExample" parameterType="com.infoanalyse.dao.model.AiAnalysisDOExample">
+    delete from ai_analysis
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </delete>
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="com.infoanalyse.dao.model.AiAnalysisDO" useGeneratedKeys="true">
+    insert into ai_analysis (source, target_id, target_type, 
+      ai_model, analysis_type, prompt_digest, 
+      status, created_time, result, 
+      error_message)
+    values (#{source,jdbcType=VARCHAR}, #{targetId,jdbcType=BIGINT}, #{targetType,jdbcType=VARCHAR}, 
+      #{aiModel,jdbcType=VARCHAR}, #{analysisType,jdbcType=VARCHAR}, #{promptDigest,jdbcType=VARCHAR}, 
+      #{status,jdbcType=VARCHAR}, #{createdTime,jdbcType=TIMESTAMP}, #{result,jdbcType=LONGVARCHAR}, 
+      #{errorMessage,jdbcType=LONGVARCHAR})
+  </insert>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="com.infoanalyse.dao.model.AiAnalysisDO" useGeneratedKeys="true">
+    insert into ai_analysis
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="source != null">
+        source,
+      </if>
+      <if test="targetId != null">
+        target_id,
+      </if>
+      <if test="targetType != null">
+        target_type,
+      </if>
+      <if test="aiModel != null">
+        ai_model,
+      </if>
+      <if test="analysisType != null">
+        analysis_type,
+      </if>
+      <if test="promptDigest != null">
+        prompt_digest,
+      </if>
+      <if test="status != null">
+        status,
+      </if>
+      <if test="createdTime != null">
+        created_time,
+      </if>
+      <if test="result != null">
+        result,
+      </if>
+      <if test="errorMessage != null">
+        error_message,
+      </if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="source != null">
+        #{source,jdbcType=VARCHAR},
+      </if>
+      <if test="targetId != null">
+        #{targetId,jdbcType=BIGINT},
+      </if>
+      <if test="targetType != null">
+        #{targetType,jdbcType=VARCHAR},
+      </if>
+      <if test="aiModel != null">
+        #{aiModel,jdbcType=VARCHAR},
+      </if>
+      <if test="analysisType != null">
+        #{analysisType,jdbcType=VARCHAR},
+      </if>
+      <if test="promptDigest != null">
+        #{promptDigest,jdbcType=VARCHAR},
+      </if>
+      <if test="status != null">
+        #{status,jdbcType=VARCHAR},
+      </if>
+      <if test="createdTime != null">
+        #{createdTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="result != null">
+        #{result,jdbcType=LONGVARCHAR},
+      </if>
+      <if test="errorMessage != null">
+        #{errorMessage,jdbcType=LONGVARCHAR},
+      </if>
+    </trim>
+  </insert>
+  <select id="countByExample" parameterType="com.infoanalyse.dao.model.AiAnalysisDOExample" resultType="java.lang.Long">
+    select count(*) from ai_analysis
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
+  <update id="updateByExampleSelective" parameterType="map">
+    update ai_analysis
+    <set>
+      <if test="row.id != null">
+        id = #{row.id,jdbcType=BIGINT},
+      </if>
+      <if test="row.source != null">
+        source = #{row.source,jdbcType=VARCHAR},
+      </if>
+      <if test="row.targetId != null">
+        target_id = #{row.targetId,jdbcType=BIGINT},
+      </if>
+      <if test="row.targetType != null">
+        target_type = #{row.targetType,jdbcType=VARCHAR},
+      </if>
+      <if test="row.aiModel != null">
+        ai_model = #{row.aiModel,jdbcType=VARCHAR},
+      </if>
+      <if test="row.analysisType != null">
+        analysis_type = #{row.analysisType,jdbcType=VARCHAR},
+      </if>
+      <if test="row.promptDigest != null">
+        prompt_digest = #{row.promptDigest,jdbcType=VARCHAR},
+      </if>
+      <if test="row.status != null">
+        status = #{row.status,jdbcType=VARCHAR},
+      </if>
+      <if test="row.createdTime != null">
+        created_time = #{row.createdTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="row.result != null">
+        result = #{row.result,jdbcType=LONGVARCHAR},
+      </if>
+      <if test="row.errorMessage != null">
+        error_message = #{row.errorMessage,jdbcType=LONGVARCHAR},
+      </if>
+    </set>
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByExampleWithBLOBs" parameterType="map">
+    update ai_analysis
+    set id = #{row.id,jdbcType=BIGINT},
+      source = #{row.source,jdbcType=VARCHAR},
+      target_id = #{row.targetId,jdbcType=BIGINT},
+      target_type = #{row.targetType,jdbcType=VARCHAR},
+      ai_model = #{row.aiModel,jdbcType=VARCHAR},
+      analysis_type = #{row.analysisType,jdbcType=VARCHAR},
+      prompt_digest = #{row.promptDigest,jdbcType=VARCHAR},
+      status = #{row.status,jdbcType=VARCHAR},
+      created_time = #{row.createdTime,jdbcType=TIMESTAMP},
+      result = #{row.result,jdbcType=LONGVARCHAR},
+      error_message = #{row.errorMessage,jdbcType=LONGVARCHAR}
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByExample" parameterType="map">
+    update ai_analysis
+    set id = #{row.id,jdbcType=BIGINT},
+      source = #{row.source,jdbcType=VARCHAR},
+      target_id = #{row.targetId,jdbcType=BIGINT},
+      target_type = #{row.targetType,jdbcType=VARCHAR},
+      ai_model = #{row.aiModel,jdbcType=VARCHAR},
+      analysis_type = #{row.analysisType,jdbcType=VARCHAR},
+      prompt_digest = #{row.promptDigest,jdbcType=VARCHAR},
+      status = #{row.status,jdbcType=VARCHAR},
+      created_time = #{row.createdTime,jdbcType=TIMESTAMP}
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByPrimaryKeySelective" parameterType="com.infoanalyse.dao.model.AiAnalysisDO">
+    update ai_analysis
+    <set>
+      <if test="source != null">
+        source = #{source,jdbcType=VARCHAR},
+      </if>
+      <if test="targetId != null">
+        target_id = #{targetId,jdbcType=BIGINT},
+      </if>
+      <if test="targetType != null">
+        target_type = #{targetType,jdbcType=VARCHAR},
+      </if>
+      <if test="aiModel != null">
+        ai_model = #{aiModel,jdbcType=VARCHAR},
+      </if>
+      <if test="analysisType != null">
+        analysis_type = #{analysisType,jdbcType=VARCHAR},
+      </if>
+      <if test="promptDigest != null">
+        prompt_digest = #{promptDigest,jdbcType=VARCHAR},
+      </if>
+      <if test="status != null">
+        status = #{status,jdbcType=VARCHAR},
+      </if>
+      <if test="createdTime != null">
+        created_time = #{createdTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="result != null">
+        result = #{result,jdbcType=LONGVARCHAR},
+      </if>
+      <if test="errorMessage != null">
+        error_message = #{errorMessage,jdbcType=LONGVARCHAR},
+      </if>
+    </set>
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+  <update id="updateByPrimaryKeyWithBLOBs" parameterType="com.infoanalyse.dao.model.AiAnalysisDO">
+    update ai_analysis
+    set source = #{source,jdbcType=VARCHAR},
+      target_id = #{targetId,jdbcType=BIGINT},
+      target_type = #{targetType,jdbcType=VARCHAR},
+      ai_model = #{aiModel,jdbcType=VARCHAR},
+      analysis_type = #{analysisType,jdbcType=VARCHAR},
+      prompt_digest = #{promptDigest,jdbcType=VARCHAR},
+      status = #{status,jdbcType=VARCHAR},
+      created_time = #{createdTime,jdbcType=TIMESTAMP},
+      result = #{result,jdbcType=LONGVARCHAR},
+      error_message = #{errorMessage,jdbcType=LONGVARCHAR}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+  <update id="updateByPrimaryKey" parameterType="com.infoanalyse.dao.model.AiAnalysisDO">
+    update ai_analysis
+    set source = #{source,jdbcType=VARCHAR},
+      target_id = #{targetId,jdbcType=BIGINT},
+      target_type = #{targetType,jdbcType=VARCHAR},
+      ai_model = #{aiModel,jdbcType=VARCHAR},
+      analysis_type = #{analysisType,jdbcType=VARCHAR},
+      prompt_digest = #{promptDigest,jdbcType=VARCHAR},
+      status = #{status,jdbcType=VARCHAR},
+      created_time = #{createdTime,jdbcType=TIMESTAMP}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+</mapper>

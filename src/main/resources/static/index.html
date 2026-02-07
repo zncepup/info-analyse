@@ -626,27 +626,19 @@
 
     const renderFiles = (files) => {
       fileList.innerHTML = '';
-      const mdFiles = files.filter((f) => f.type === 'md');
-      if (!mdFiles.length) {
+      if (!files.length) {
         fileList.innerHTML = '<li class="file-item empty">该作者暂无内容</li>';
         return;
       }
-      const displayTitle = (name) => {
-        let base = (name || '').replace(/\.md$/i, '').replace(/\.docx$/i, '');
-        if (base.startsWith('article_')) {
-          base = base.replace(/^article_\d+_/, '');
-        } else {
-          base = base.replace(/^\d+_/, '');
-        }
-        return base.replace(/_/g, ' ');
-      };
-      mdFiles.slice(0, 10).forEach((file) => {
+      files.slice(0, 30).forEach((file) => {
         const li = document.createElement('li');
         li.className = 'file-item';
+        const typeLabel = file.type === 'article' ? '文章' : file.type === 'answer' ? '回答' : file.type === 'guba_post' ? '股吧' : file.type;
+        const analyzed = file.analyzed ? ' · ✅ 已分析' : '';
         li.innerHTML = `
           <span>
-            <a class="file-link" href="${file.viewUrl}" target="_blank">${displayTitle(file.name)}</a><br>
-            <small>${formatTime(file.lastModified)}</small>
+            <a class="file-link" href="${file.viewUrl}" target="_blank">${file.name || '未知标题'}</a><br>
+            <small>${typeLabel}${analyzed} · ${formatTime(file.lastModified)}</small>
           </span>
         `;
         fileList.appendChild(li);

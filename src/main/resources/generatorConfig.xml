@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE generatorConfiguration
+        PUBLIC "-//mybatis.org//DTD MyBatis Generator Configuration 1.0//EN"
+        "http://mybatis.org/dtd/mybatis-generator-config_1_0.dtd">
+<generatorConfiguration>
+    <context id="info_analyse" targetRuntime="MyBatis3" defaultModelType="flat">
+
+        <!-- 不生成注释 -->
+        <commentGenerator>
+            <property name="suppressAllComments" value="true"/>
+        </commentGenerator>
+
+        <jdbcConnection driverClass="com.mysql.cj.jdbc.Driver"
+                        connectionURL="jdbc:mysql://localhost:3306/info_analyse?useSSL=false&amp;allowPublicKeyRetrieval=true"
+                        userId="root" password="root123"/>
+
+        <javaTypeResolver>
+            <property name="forceBigDecimals" value="false"/>
+            <property name="useJSR310Types" value="true"/>
+        </javaTypeResolver>
+
+        <!-- Model -->
+        <javaModelGenerator targetPackage="com.infoanalyse.dao.model" targetProject="src/main/java">
+            <property name="trimStrings" value="true"/>
+        </javaModelGenerator>
+
+        <!-- XML Mapper -->
+        <sqlMapGenerator targetPackage="mapper" targetProject="src/main/resources"/>
+
+        <!-- Mapper Interface -->
+        <javaClientGenerator type="XMLMAPPER" targetPackage="com.infoanalyse.dao.mapper" targetProject="src/main/java"/>
+
+        <!-- Tables -->
+        <table tableName="zhihu_answer" domainObjectName="ZhihuAnswerDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+        <table tableName="zhihu_article" domainObjectName="ZhihuArticleDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+        <table tableName="zhihu_comment" domainObjectName="ZhihuCommentDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+        <table tableName="guba_post" domainObjectName="GubaPostDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+        <table tableName="guba_comment" domainObjectName="GubaCommentDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+        <table tableName="crawl_image" domainObjectName="CrawlImageDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+        <table tableName="crawl_task" domainObjectName="CrawlTaskDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+        <table tableName="ai_analysis" domainObjectName="AiAnalysisDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
+    </context>
+</generatorConfiguration>

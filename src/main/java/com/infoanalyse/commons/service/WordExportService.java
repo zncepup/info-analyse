@@ -49,6 +49,18 @@ public class WordExportService {
             outputPath = parentDir.resolve(fileName);
         }
         
+        return exportContentToWord(content, outputPath, parentDir);
+    }
+
+    /**
+     * 将 Markdown 内容字符串导出为 Word 文档
+     * @param content Markdown 内容
+     * @param outputPath 输出文件路径
+     * @param imageBaseDir 图片相对路径的基准目录（可为 null）
+     */
+    public Path exportContentToWord(String content, Path outputPath, Path imageBaseDir) throws Exception {
+        Files.createDirectories(outputPath.getParent());
+        
         try (XWPFDocument document = new XWPFDocument()) {
             String[] lines = content.split("\n");
             
@@ -71,9 +83,9 @@ public class WordExportService {
                 } else if (line.equals("---") || line.equals("***") || line.equals("___")) {
                     addHorizontalLine(document);
                 } else if (line.startsWith("- ") || line.startsWith("* ")) {
-                    addListItem(document, line.substring(2), parentDir);
+                    addListItem(document, line.substring(2), imageBaseDir);
                 } else if (line.startsWith("![")) {
-                    addImageLine(document, line, parentDir);
+                    addImageLine(document, line, imageBaseDir);
                 } else if (line.startsWith("|") && line.endsWith("|")) {
                     java.util.List<String> tableLines = new java.util.ArrayList<>();
                     tableLines.add(line);
@@ -85,7 +97,7 @@ public class WordExportService {
                 } else if (line.startsWith("> ")) {
                     addQuote(document, line.substring(2));
                 } else {
-                    addParagraph(document, line, parentDir);
+                    addParagraph(document, line, imageBaseDir);
                 }
             }
             

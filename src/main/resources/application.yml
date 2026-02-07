@@ -35,6 +35,13 @@
     noninteractive:
       enabled: false
 
+  # MySQL 数据源
+  datasource:
+    url: jdbc:mysql://localhost:3306/info_analyse?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
 # 搴旂敤閰嶇疆
 app:
   name: 鎶曡祫淇℃伅鍒嗘瀽绯荤粺
@@ -71,6 +78,12 @@ deepseek:
 
 server:
   address: 0.0.0.0
+
+# MyBatis 配置
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
 
 
 

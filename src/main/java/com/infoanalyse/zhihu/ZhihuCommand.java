@@ -1,10 +1,15 @@
 package com.infoanalyse.zhihu;
 
+import com.infoanalyse.dao.mapper.AiAnalysisDOMapper;
+import com.infoanalyse.dao.mapper.ZhihuAnswerDOMapper;
+import com.infoanalyse.dao.mapper.ZhihuArticleDOMapper;
+import com.infoanalyse.dao.mapper.GubaPostDOMapper;
+import com.infoanalyse.dao.model.*;
 import com.infoanalyse.zhihu.model.ZhihuAnswer;
 import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
-import com.infoanalyse.zhihu.service.AnswerSaveService;
 import com.infoanalyse.zhihu.service.DeepSeekService;
+import com.infoanalyse.zhihu.service.ZhihuDbSaveService;
 import com.infoanalyse.commons.service.WordExportService;
 import com.infoanalyse.zhihu.service.ZhihuBrowserCrawlerService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +19,7 @@ import org.springframework.shell.standard.ShellOption;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -26,13 +32,25 @@ public class ZhihuCommand {
     private ZhihuBrowserCrawlerService zhihuBrowserCrawlerService;
     
     @Autowired
-    private AnswerSaveService answerSaveService;
+    private ZhihuDbSaveService zhihuDbSaveService;
     
     @Autowired
     private DeepSeekService deepSeekService;
     
     @Autowired
     private WordExportService wordExportService;
+
+    @Autowired
+    private AiAnalysisDOMapper aiAnalysisMapper;
+
+    @Autowired
+    private ZhihuAnswerDOMapper answerMapper;
+
+    @Autowired
+    private ZhihuArticleDOMapper articleMapper;
+
+    @Autowired
+    private GubaPostDOMapper gubaPostMapper;
 
     /**
      * 打开浏览器让用户登录知乎
@@ -132,33 +150,18 @@ public class ZhihuCommand {
             
             // 保存为文件
             if (save) {
-                System.out.println("正在保存回答为 Markdown 文件...");
+                System.out.println("正在保存回答到数据库...");
                 
-                // 使用第一个回答的作者名称作为文件夹名
-                String authorFolder = answers.isEmpty() ? userId : 
-                    (answers.get(0).getAuthorName() != null ? answers.get(0).getAuthorName() : userId);
-                
-                if (withComments) {
-                    int savedCount = 0;
-                    for (ZhihuAnswer answer : answers) {
-                        try {
-                            answerSaveService.saveAnswer(answer, authorFolder);
-                            savedCount++;
-                        } catch (Exception e) {
-                            System.out.println("保存失败: " + answer.getId() + " - " + e.getMessage());
-                        }
-                    }
-                    System.out.println("保存 " + savedCount + " 个文件到 output/" + authorFolder + "/ 目录（含评论）");
-                } else {
-                    int existingCount = answerSaveService.getSavedAnswerIds(authorFolder).size();
-                    List<Path> savedFiles = answerSaveService.saveAnswers(answers, authorFolder);
-                    
-                    if (savedFiles.isEmpty() && existingCount > 0) {
-                        System.out.println("所有回答都已保存过，无需重复保存");
-                    } else {
-                        System.out.println("新保存 " + savedFiles.size() + " 个文件到 output/" + authorFolder + "/ 目录");
+                int savedCount = 0;
+                for (ZhihuAnswer answer : answers) {
+                    try {
+                        zhihuDbSaveService.saveAnswer(answer);
+                        savedCount++;
+                    } catch (Exception e) {
+                        System.out.println("保存失败: " + answer.getId() + " - " + e.getMessage());
                     }
                 }
+                System.out.println("已保存 " + savedCount + " 条回答到数据库");
             }
             
             return "抓取成功！";
@@ -277,9 +280,8 @@ public class ZhihuCommand {
         
         if (save) {
             try {
-                String authorFolder = answer.getAuthorName() != null ? answer.getAuthorName() : "unknown";
-                Path savedPath = answerSaveService.saveAnswer(answer, authorFolder);
-                System.out.println("已保存到: " + savedPath);
+                zhihuDbSaveService.saveAnswer(answer);
+                System.out.println("已保存到数据库");
             } catch (Exception e) {
                 System.out.println("保存失败: " + e.getMessage());
             }
@@ -319,9 +321,8 @@ public class ZhihuCommand {
         
         if (save) {
             try {
-                String authorFolder = article.getAuthorName() != null ? article.getAuthorName() : "unknown";
-                Path savedPath = answerSaveService.saveArticle(article, authorFolder);
-                System.out.println("已保存到: " + savedPath);
+                zhihuDbSaveService.saveArticle(article);
+                System.out.println("已保存到数据库");
             } catch (Exception e) {
                 System.out.println("保存失败: " + e.getMessage());
             }
@@ -369,18 +370,20 @@ public class ZhihuCommand {
             System.out.println();
             
             // 检查哪些是新的
-            java.util.Set<String> savedAnswerIds = answerSaveService.getSavedAnswerIds(authorName);
+            java.util.Set<Long> savedAnswerIds = zhihuDbSaveService.getSavedAnswerIds();
             
             List<ZhihuBrowserCrawlerService.ActivityItem> newAnswers = new java.util.ArrayList<>();
             List<ZhihuBrowserCrawlerService.ActivityItem> newArticles = new java.util.ArrayList<>();
             
             for (ZhihuBrowserCrawlerService.ActivityItem item : activities) {
                 if ("answer".equals(item.type)) {
-                    if (!savedAnswerIds.contains(item.id)) {
+                    Long idNum = null;
+                    try { idNum = Long.parseLong(item.id); } catch (Exception ignored) {}
+                    if (idNum == null || !savedAnswerIds.contains(idNum)) {
                         newAnswers.add(item);
                     }
                 } else if ("article".equals(item.type)) {
-                    if (!answerSaveService.isArticleSaved(item.id, authorName)) {
+                    if (!zhihuDbSaveService.isArticleSaved(item.id)) {
                         newArticles.add(item);
                     }
                 }
@@ -392,15 +395,6 @@ public class ZhihuCommand {
             if (newAnswers.isEmpty() && newArticles.isEmpty()) {
                 System.out.println();
                 System.out.println("没有新内容需要抓取");
-                
-                // 更新索引
-                try {
-                    answerSaveService.updateAuthorIndex(authorName, userId);
-                    System.out.println("索引已更新");
-                } catch (Exception e) {
-                    System.out.println("更新索引失败: " + e.getMessage());
-                }
-                
                 return "同步完成，无新内容";
             }
             
@@ -427,7 +421,7 @@ public class ZhihuCommand {
                         System.out.println("  获取 " + comments.size() + " 条作者互动评论");
                     }
                     
-                    answerSaveService.saveAnswer(answer, authorName);
+                    zhihuDbSaveService.saveAnswer(answer);
                     savedCount++;
                     System.out.println("  ✓ 已保存");
                     
@@ -458,7 +452,7 @@ public class ZhihuCommand {
                         System.out.println("  获取 " + comments.size() + " 条作者互动评论");
                     }
                     
-                    answerSaveService.saveArticle(article, authorName);
+                    zhihuDbSaveService.saveArticle(article);
                     savedCount++;
                     System.out.println("  ✓ 已保存");
                     
@@ -476,14 +470,6 @@ public class ZhihuCommand {
             System.out.println("=== 同步完成 ===");
             System.out.println("成功保存: " + savedCount + " 条内容");
             
-            // 更新索引
-            try {
-                java.nio.file.Path indexPath = answerSaveService.updateAuthorIndex(authorName, userId);
-                System.out.println("索引已更新: " + indexPath);
-            } catch (Exception e) {
-                System.out.println("更新索引失败: " + e.getMessage());
-            }
-            
             return "同步完成！新增 " + savedCount + " 条内容";
             
         } catch (Exception e) {
@@ -493,70 +479,125 @@ public class ZhihuCommand {
     }
     
     /**
-     * 分析文章提炼投资线索
+     * 分析内容提炼投资线索（从数据库读取）
+     * @param source 来源: zhihu / guba
+     * @param targetId 业务ID
+     * @param targetType 类型: answer / article / post
      */
-    @ShellMethod(value = "分析文章提炼投资线索", key = "zhihu-analyze")
-    public String analyzeContent(
-            @ShellOption(value = {"--file", "-f"}, help = "要分析的 Markdown 文件路径") String filePath) {
-        
+    public String analyzeContentFromDb(String source, Long targetId, String targetType) {
         try {
             if (!deepSeekService.isAvailable()) {
                 return "DeepSeek API 未配置，请检查 api-key-file 配置";
             }
-            
-            Path path = Path.of(filePath);
-            if (!Files.exists(path)) {
-                return "文件不存在: " + filePath;
+
+            // 检查DB中是否已有分析结果
+            AiAnalysisDOExample example = new AiAnalysisDOExample();
+            example.createCriteria()
+                    .andSourceEqualTo(source)
+                    .andTargetIdEqualTo(targetId)
+                    .andTargetTypeEqualTo(targetType)
+                    .andAiModelEqualTo("deepseek-reasoner")
+                    .andAnalysisTypeEqualTo("investment_clue");
+            if (aiAnalysisMapper.countByExample(example) > 0) {
+                return "该内容已有 AI 分析结果，跳过";
             }
-            
-            System.out.println("正在读取文件...");
-            String content = Files.readString(path);
-            
-            // 检查是否已经分析过
-            if (content.contains("## AI 投资线索分析")) {
-                return "该文件已包含 AI 分析结果，跳过";
+
+            // 从DB读取内容和标题
+            String content;
+            String title;
+            if ("zhihu".equals(source) && "answer".equals(targetType)) {
+                ZhihuAnswerDOExample aEx = new ZhihuAnswerDOExample();
+                aEx.createCriteria().andAnswerIdEqualTo(targetId);
+                List<ZhihuAnswerDO> list = answerMapper.selectByExampleWithBLOBs(aEx);
+                if (list.isEmpty()) return "回答不存在: " + targetId;
+                content = list.get(0).getContent();
+                title = list.get(0).getQuestionTitle();
+            } else if ("zhihu".equals(source) && "article".equals(targetType)) {
+                ZhihuArticleDOExample aEx = new ZhihuArticleDOExample();
+                aEx.createCriteria().andArticleIdEqualTo(targetId);
+                List<ZhihuArticleDO> list = articleMapper.selectByExampleWithBLOBs(aEx);
+                if (list.isEmpty()) return "文章不存在: " + targetId;
+                content = list.get(0).getContent();
+                title = list.get(0).getTitle();
+            } else if ("guba".equals(source) && "post".equals(targetType)) {
+                GubaPostDOExample pEx = new GubaPostDOExample();
+                pEx.createCriteria().andPostIdEqualTo(targetId);
+                List<GubaPostDO> list = gubaPostMapper.selectByExampleWithBLOBs(pEx);
+                if (list.isEmpty()) return "帖子不存在: " + targetId;
+                content = list.get(0).getContent();
+                title = list.get(0).getTitle();
+            } else {
+                return "不支持的来源/类型: " + source + "/" + targetType;
             }
-            
-            // 提取标题（第一行 # 开头的内容）
-            String title = "未知标题";
-            String[] lines = content.split("\n");
-            for (String line : lines) {
-                if (line.startsWith("# ")) {
-                    title = line.substring(2).trim();
-                    break;
-                }
+
+            if (content == null || content.isBlank()) {
+                return "内容为空，跳过";
             }
-            
+            if (title == null) title = "未知标题";
+
             System.out.println("正在分析: " + title);
             System.out.println("调用 DeepSeek API...");
-            
+
             String analysis = deepSeekService.extractInvestmentClues(content, title);
-            
+
             System.out.println();
             System.out.println("=== 投资线索分析 ===");
             System.out.println();
             System.out.println(analysis);
-            
-            // 将分析结果追加到原文档末尾
-            String analysisSection = "\n\n---\n\n## AI 投资线索分析\n\n> 由 DeepSeek 自动生成\n\n" + analysis;
-            Files.writeString(path, content + analysisSection);
-            System.out.println();
-            System.out.println("分析结果已追加到原文档: " + path);
-            
+
+            // 保存到数据库
+            AiAnalysisDO record = new AiAnalysisDO();
+            record.setSource(source);
+            record.setTargetId(targetId);
+            record.setTargetType(targetType);
+            record.setAiModel("deepseek-reasoner");
+            record.setAnalysisType("investment_clue");
+            record.setResult(analysis);
+            record.setStatus("COMPLETED");
+            record.setCreatedTime(java.time.LocalDateTime.now());
+            aiAnalysisMapper.insertSelective(record);
+
+            System.out.println("分析结果已保存到数据库");
+
             return "分析完成";
-            
+
         } catch (Exception e) {
             e.printStackTrace();
             return "分析失败: " + e.getMessage();
         }
     }
+
+    /**
+     * Shell 命令兼容: 通过文件路径分析（解析出ID后从DB读取）
+     */
+    @ShellMethod(value = "分析文章提炼投资线索", key = "zhihu-analyze")
+    public String analyzeContent(
+            @ShellOption(value = {"--file", "-f"}, help = "要分析的 Markdown 文件路径") String filePath) {
+        String fileName = Path.of(filePath).getFileName().toString();
+        String source = "zhihu";
+        String targetType;
+        Long targetId;
+        if (fileName.startsWith("article_")) {
+            targetType = "article";
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("^article_(\\d+)_").matcher(fileName);
+            if (!m.find()) return "无法解析文章ID: " + fileName;
+            targetId = Long.parseLong(m.group(1));
+        } else {
+            targetType = "answer";
+            int idx = fileName.indexOf('_');
+            if (idx <= 0) return "无法解析回答ID: " + fileName;
+            try { targetId = Long.parseLong(fileName.substring(0, idx)); }
+            catch (NumberFormatException e) { return "无法解析ID: " + fileName; }
+        }
+        return analyzeContentFromDb(source, targetId, targetType);
+    }
     
     /**
-     * 批量分析作者所有文章
+     * 批量分析作者所有内容（从数据库读取）
      */
     @ShellMethod(value = "批量分析作者所有文章", key = "zhihu-analyze-all")
     public String analyzeAll(
-            @ShellOption(value = {"--author", "-a"}, help = "作者文件夹名称") String authorName,
+            @ShellOption(value = {"--author", "-a"}, help = "作者名称") String authorName,
             @ShellOption(value = {"--delay"}, defaultValue = "3", help = "每篇文章分析间隔(秒)") int delay) {
         
         try {
@@ -564,65 +605,60 @@ public class ZhihuCommand {
                 return "DeepSeek API 未配置，请检查 api-key-file 配置";
             }
             
-            Path authorDir = Path.of("output", authorName);
-            if (!Files.exists(authorDir)) {
-                return "作者目录不存在: " + authorDir;
+            // 从DB查询该作者的所有内容
+            List<long[]> targets = new ArrayList<>(); // [targetId, 0=answer/1=article]
+            List<String> titles = new ArrayList<>();
+            
+            ZhihuAnswerDOExample aExample = new ZhihuAnswerDOExample();
+            aExample.createCriteria().andAuthorNameEqualTo(authorName);
+            List<ZhihuAnswerDO> answers = answerMapper.selectByExample(aExample);
+            for (ZhihuAnswerDO a : answers) {
+                targets.add(new long[]{a.getAnswerId(), 0});
+                titles.add(a.getQuestionTitle() != null ? a.getQuestionTitle() : "回答" + a.getAnswerId());
             }
             
-            // 获取所有 md 文件（排除 INDEX.md 和已分析的文件）
-            java.util.List<Path> mdFiles = Files.list(authorDir)
-                    .filter(p -> p.toString().endsWith(".md"))
-                    .filter(p -> !p.getFileName().toString().equals("INDEX.md"))
-                    .filter(p -> !p.getFileName().toString().endsWith("_analysis.md"))
-                    .sorted()
-                    .collect(java.util.stream.Collectors.toList());
+            ZhihuArticleDOExample artExample = new ZhihuArticleDOExample();
+            artExample.createCriteria().andAuthorNameEqualTo(authorName);
+            List<ZhihuArticleDO> articles = articleMapper.selectByExample(artExample);
+            for (ZhihuArticleDO a : articles) {
+                targets.add(new long[]{a.getArticleId(), 1});
+                titles.add(a.getTitle() != null ? a.getTitle() : "文章" + a.getArticleId());
+            }
             
-            System.out.println("找到 " + mdFiles.size() + " 个文件待分析");
+            if (targets.isEmpty()) {
+                return "未找到作者 " + authorName + " 的内容";
+            }
+            
+            System.out.println("找到 " + targets.size() + " 条内容待分析");
             System.out.println();
             
             int analyzed = 0;
             int skipped = 0;
             int failed = 0;
             
-            for (int i = 0; i < mdFiles.size(); i++) {
-                Path file = mdFiles.get(i);
-                String fileName = file.getFileName().toString();
-                System.out.println("[" + (i + 1) + "/" + mdFiles.size() + "] " + fileName);
+            for (int i = 0; i < targets.size(); i++) {
+                long[] target = targets.get(i);
+                Long targetId = target[0];
+                String targetType = target[1] == 0 ? "answer" : "article";
+                String title = titles.get(i);
+                
+                System.out.println("[" + (i + 1) + "/" + targets.size() + "] " + title);
                 
                 try {
-                    String content = Files.readString(file);
-                    
-                    // 检查是否已分析
-                    if (content.contains("## AI 投资线索分析")) {
+                    String result = analyzeContentFromDb("zhihu", targetId, targetType);
+                    if (result.contains("跳过")) {
                         System.out.println("  已分析，跳过");
                         skipped++;
-                        continue;
-                    }
-                    
-                    // 提取标题
-                    String title = "未知标题";
-                    for (String line : content.split("\n")) {
-                        if (line.startsWith("# ")) {
-                            title = line.substring(2).trim();
-                            break;
+                    } else if (result.contains("完成")) {
+                        System.out.println("  ✓ 完成");
+                        analyzed++;
+                        if (i < targets.size() - 1) {
+                            Thread.sleep(delay * 1000L);
                         }
+                    } else {
+                        System.out.println("  " + result);
+                        skipped++;
                     }
-                    
-                    System.out.println("  分析中: " + title);
-                    String analysis = deepSeekService.extractInvestmentClues(content, title);
-                    
-                    // 追加到原文档
-                    String analysisSection = "\n\n---\n\n## AI 投资线索分析\n\n> 由 DeepSeek 自动生成\n\n" + analysis;
-                    Files.writeString(file, content + analysisSection);
-                    
-                    System.out.println("  ✓ 完成");
-                    analyzed++;
-                    
-                    // 延迟避免 API 限流
-                    if (i < mdFiles.size() - 1) {
-                        Thread.sleep(delay * 1000L);
-                    }
-                    
                 } catch (Exception e) {
                     System.out.println("  ✗ 失败: " + e.getMessage());
                     failed++;
@@ -642,20 +678,34 @@ public class ZhihuCommand {
     }
     
     /**
-     * 导出 Markdown 为 Word 文档
+     * 导出内容为 Word 文档（从数据库读取）
      */
-    @ShellMethod(value = "导出 Markdown 为 Word 文档", key = "export-word")
+    @ShellMethod(value = "导出内容为 Word 文档", key = "export-word")
     public String exportWord(
-            @ShellOption(value = {"--file", "-f"}, help = "要导出的 Markdown 文件路径") String filePath) {
+            @ShellOption(value = {"--file", "-f"}, help = "source/type/id 格式，如 zhihu/answer/12345") String target) {
         
         try {
-            Path path = Path.of(filePath);
-            if (!Files.exists(path)) {
-                return "文件不存在: " + filePath;
-            }
+            String[] parts = parseTarget(target);
+            if (parts == null) return "格式错误，请使用 source/type/id 格式，如 zhihu/answer/12345";
             
-            System.out.println("正在导出: " + path.getFileName());
-            Path outputPath = wordExportService.exportToWord(path);
+            String source = parts[0];
+            String targetType = parts[1];
+            Long targetId = Long.parseLong(parts[2]);
+            
+            String content = loadContentFromDb(source, targetId, targetType);
+            if (content == null) return "内容不存在: " + target;
+            
+            String title = loadTitleFromDb(source, targetId, targetType);
+            if (title == null) title = targetType + "_" + targetId;
+            
+            // 拼接AI分析结果
+            content = appendAiAnalysisText(content, source, targetId, targetType);
+            
+            String safeTitle = title.replaceAll("[\\\\/:*?\"<>|]", "_");
+            Path outputPath = Path.of("output", "word", safeTitle + ".docx");
+            
+            System.out.println("正在导出: " + title);
+            wordExportService.exportContentToWord(content, outputPath, null);
             System.out.println("导出成功: " + outputPath);
             
             return "导出完成";
@@ -667,43 +717,64 @@ public class ZhihuCommand {
     }
     
     /**
-     * 批量导出作者所有文章为 Word
+     * 批量导出作者所有内容为 Word（从数据库读取）
      */
     @ShellMethod(value = "批量导出作者所有文章为 Word", key = "export-word-all")
     public String exportWordAll(
-            @ShellOption(value = {"--author", "-a"}, help = "作者文件夹名称") String authorName) {
+            @ShellOption(value = {"--author", "-a"}, help = "作者名称") String authorName) {
         
         try {
-            Path authorDir = Path.of("output", authorName);
-            if (!Files.exists(authorDir)) {
-                return "作者目录不存在: " + authorDir;
-            }
-            
-            // Word 文件输出到 word 子目录
-            Path wordDir = authorDir.resolve("word");
+            Path wordDir = Path.of("output", "word", authorName);
             Files.createDirectories(wordDir);
             
-            // 获取所有 md 文件（排除 INDEX.md）
-            java.util.List<Path> mdFiles = Files.list(authorDir)
-                    .filter(p -> p.toString().endsWith(".md"))
-                    .filter(p -> !p.getFileName().toString().equals("INDEX.md"))
-                    .sorted()
-                    .collect(java.util.stream.Collectors.toList());
+            // 从DB查询该作者的所有内容
+            List<Object[]> targets = new ArrayList<>(); // [source, targetType, targetId, title]
             
-            System.out.println("找到 " + mdFiles.size() + " 个文件待导出");
+            ZhihuAnswerDOExample aExample = new ZhihuAnswerDOExample();
+            aExample.createCriteria().andAuthorNameEqualTo(authorName);
+            for (ZhihuAnswerDO a : answerMapper.selectByExample(aExample)) {
+                targets.add(new Object[]{"zhihu", "answer", a.getAnswerId(), a.getQuestionTitle()});
+            }
+            
+            ZhihuArticleDOExample artExample = new ZhihuArticleDOExample();
+            artExample.createCriteria().andAuthorNameEqualTo(authorName);
+            for (ZhihuArticleDO a : articleMapper.selectByExample(artExample)) {
+                targets.add(new Object[]{"zhihu", "article", a.getArticleId(), a.getTitle()});
+            }
+            
+            if (targets.isEmpty()) {
+                return "未找到作者 " + authorName + " 的内容";
+            }
+            
+            System.out.println("找到 " + targets.size() + " 条内容待导出");
             System.out.println("输出目录: " + wordDir);
             System.out.println();
             
             int success = 0;
             int failed = 0;
             
-            for (int i = 0; i < mdFiles.size(); i++) {
-                Path file = mdFiles.get(i);
-                String fileName = file.getFileName().toString();
-                System.out.print("[" + (i + 1) + "/" + mdFiles.size() + "] " + fileName + " ... ");
+            for (int i = 0; i < targets.size(); i++) {
+                Object[] t = targets.get(i);
+                String source = (String) t[0];
+                String targetType = (String) t[1];
+                Long targetId = (Long) t[2];
+                String title = (String) t[3];
+                if (title == null) title = targetType + "_" + targetId;
+                
+                System.out.print("[" + (i + 1) + "/" + targets.size() + "] " + title + " ... ");
                 
                 try {
-                    wordExportService.exportToWord(file, wordDir);
+                    String content = loadContentFromDb(source, targetId, targetType);
+                    if (content == null || content.isBlank()) {
+                        System.out.println("✗ 内容为空");
+                        failed++;
+                        continue;
+                    }
+                    content = appendAiAnalysisText(content, source, targetId, targetType);
+                    
+                    String safeTitle = title.replaceAll("[\\\\/:*?\"<>|]", "_");
+                    Path outputPath = wordDir.resolve(safeTitle + ".docx");
+                    wordExportService.exportContentToWord(content, outputPath, null);
                     System.out.println("✓");
                     success++;
                 } catch (Exception e) {
@@ -723,5 +794,91 @@ public class ZhihuCommand {
             e.printStackTrace();
             return "批量导出失败: " + e.getMessage();
         }
+    }
+
+    // ========== 辅助方法 ==========
+
+    private String[] parseTarget(String target) {
+        // 支持 zhihu/answer/12345 或旧的文件路径格式
+        String[] parts = target.split("/");
+        if (parts.length == 3) {
+            try {
+                Long.parseLong(parts[2]);
+                return parts;
+            } catch (NumberFormatException ignored) {}
+        }
+        // 尝试从文件名解析
+        String fileName = Path.of(target).getFileName().toString();
+        if (fileName.startsWith("article_")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("^article_(\\d+)_").matcher(fileName);
+            if (m.find()) return new String[]{"zhihu", "article", m.group(1)};
+        } else {
+            int idx = fileName.indexOf('_');
+            if (idx > 0) {
+                try {
+                    Long.parseLong(fileName.substring(0, idx));
+                    return new String[]{"zhihu", "answer", fileName.substring(0, idx)};
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return null;
+    }
+
+    private String loadContentFromDb(String source, Long targetId, String targetType) {
+        if ("zhihu".equals(source) && "answer".equals(targetType)) {
+            ZhihuAnswerDOExample ex = new ZhihuAnswerDOExample();
+            ex.createCriteria().andAnswerIdEqualTo(targetId);
+            List<ZhihuAnswerDO> list = answerMapper.selectByExampleWithBLOBs(ex);
+            return list.isEmpty() ? null : list.get(0).getContent();
+        } else if ("zhihu".equals(source) && "article".equals(targetType)) {
+            ZhihuArticleDOExample ex = new ZhihuArticleDOExample();
+            ex.createCriteria().andArticleIdEqualTo(targetId);
+            List<ZhihuArticleDO> list = articleMapper.selectByExampleWithBLOBs(ex);
+            return list.isEmpty() ? null : list.get(0).getContent();
+        } else if ("guba".equals(source) && "post".equals(targetType)) {
+            GubaPostDOExample ex = new GubaPostDOExample();
+            ex.createCriteria().andPostIdEqualTo(targetId);
+            List<GubaPostDO> list = gubaPostMapper.selectByExampleWithBLOBs(ex);
+            return list.isEmpty() ? null : list.get(0).getContent();
+        }
+        return null;
+    }
+
+    private String loadTitleFromDb(String source, Long targetId, String targetType) {
+        if ("zhihu".equals(source) && "answer".equals(targetType)) {
+            ZhihuAnswerDOExample ex = new ZhihuAnswerDOExample();
+            ex.createCriteria().andAnswerIdEqualTo(targetId);
+            List<ZhihuAnswerDO> list = answerMapper.selectByExample(ex);
+            return list.isEmpty() ? null : list.get(0).getQuestionTitle();
+        } else if ("zhihu".equals(source) && "article".equals(targetType)) {
+            ZhihuArticleDOExample ex = new ZhihuArticleDOExample();
+            ex.createCriteria().andArticleIdEqualTo(targetId);
+            List<ZhihuArticleDO> list = articleMapper.selectByExample(ex);
+            return list.isEmpty() ? null : list.get(0).getTitle();
+        } else if ("guba".equals(source) && "post".equals(targetType)) {
+            GubaPostDOExample ex = new GubaPostDOExample();
+            ex.createCriteria().andPostIdEqualTo(targetId);
+            List<GubaPostDO> list = gubaPostMapper.selectByExample(ex);
+            return list.isEmpty() ? null : list.get(0).getTitle();
+        }
+        return null;
+    }
+
+    private String appendAiAnalysisText(String content, String source, Long targetId, String targetType) {
+        AiAnalysisDOExample ex = new AiAnalysisDOExample();
+        ex.createCriteria()
+                .andSourceEqualTo(source)
+                .andTargetIdEqualTo(targetId)
+                .andTargetTypeEqualTo(targetType)
+                .andStatusEqualTo("COMPLETED");
+        List<AiAnalysisDO> analyses = aiAnalysisMapper.selectByExampleWithBLOBs(ex);
+        if (analyses.isEmpty()) return content;
+        
+        StringBuilder sb = new StringBuilder(content);
+        for (AiAnalysisDO a : analyses) {
+            sb.append("\n\n## AI 分析 (").append(a.getAiModel()).append(")\n\n");
+            sb.append(a.getResult());
+        }
+        return sb.toString();
     }
 }

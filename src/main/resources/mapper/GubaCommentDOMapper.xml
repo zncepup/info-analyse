@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infoanalyse.dao.mapper.GubaCommentDOMapper">
+  <resultMap id="BaseResultMap" type="com.infoanalyse.dao.model.GubaCommentDO">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="comment_id" jdbcType="BIGINT" property="commentId" />
+    <result column="post_id" jdbcType="BIGINT" property="postId" />
+    <result column="author_name" jdbcType="VARCHAR" property="authorName" />
+    <result column="author_id" jdbcType="VARCHAR" property="authorId" />
+    <result column="like_count" jdbcType="INTEGER" property="likeCount" />
+    <result column="reply_to_comment_id" jdbcType="BIGINT" property="replyToCommentId" />
+    <result column="reply_to_user" jdbcType="VARCHAR" property="replyToUser" />
+    <result column="publish_time" jdbcType="TIMESTAMP" property="publishTime" />
+    <result column="crawl_time" jdbcType="TIMESTAMP" property="crawlTime" />
+  </resultMap>
+  <resultMap extends="BaseResultMap" id="ResultMapWithBLOBs" type="com.infoanalyse.dao.model.GubaCommentDO">
+    <result column="content" jdbcType="LONGVARCHAR" property="content" />
+  </resultMap>
+  <sql id="Example_Where_Clause">
+    <where>
+      <foreach collection="oredCriteria" item="criteria" separator="or">
+        <if test="criteria.valid">
+          <trim prefix="(" prefixOverrides="and" suffix=")">
+            <foreach collection="criteria.criteria" item="criterion">
+              <choose>
+                <when test="criterion.noValue">
+                  and ${criterion.condition}
+                </when>
+                <when test="criterion.singleValue">
+                  and ${criterion.condition} #{criterion.value}
+                </when>
+                <when test="criterion.betweenValue">
+                  and ${criterion.condition} #{criterion.value} and #{criterion.secondValue}
+                </when>
+                <when test="criterion.listValue">
+                  and ${criterion.condition}
+                  <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                    #{listItem}
+                  </foreach>
+                </when>
+              </choose>
+            </foreach>
+          </trim>
+        </if>
+      </foreach>
+    </where>
+  </sql>
+  <sql id="Update_By_Example_Where_Clause">
+    <where>
+      <foreach collection="example.oredCriteria" item="criteria" separator="or">
+        <if test="criteria.valid">
+          <trim prefix="(" prefixOverrides="and" suffix=")">
+            <foreach collection="criteria.criteria" item="criterion">
+              <choose>
+                <when test="criterion.noValue">
+                  and ${criterion.condition}
+                </when>
+                <when test="criterion.singleValue">
+                  and ${criterion.condition} #{criterion.value}
+                </when>
+                <when test="criterion.betweenValue">
+                  and ${criterion.condition} #{criterion.value} and #{criterion.secondValue}
+                </when>
+                <when test="criterion.listValue">
+                  and ${criterion.condition}
+                  <foreach close=")" collection="criterion.value" item="listItem" open="(" separator=",">
+                    #{listItem}
+                  </foreach>
+                </when>
+              </choose>
+            </foreach>
+          </trim>
+        </if>
+      </foreach>
+    </where>
+  </sql>
+  <sql id="Base_Column_List">
+    id, comment_id, post_id, author_name, author_id, like_count, reply_to_comment_id, 
+    reply_to_user, publish_time, crawl_time
+  </sql>
+  <sql id="Blob_Column_List">
+    content
+  </sql>
+  <select id="selectByExampleWithBLOBs" parameterType="com.infoanalyse.dao.model.GubaCommentDOExample" resultMap="ResultMapWithBLOBs">
+    select
+    <if test="distinct">
+      distinct
+    </if>
+    <include refid="Base_Column_List" />
+    ,
+    <include refid="Blob_Column_List" />
+    from guba_comment
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+    <if test="orderByClause != null">
+      order by ${orderByClause}
+    </if>
+  </select>
+  <select id="selectByExample" parameterType="com.infoanalyse.dao.model.GubaCommentDOExample" resultMap="BaseResultMap">
+    select
+    <if test="distinct">
+      distinct
+    </if>
+    <include refid="Base_Column_List" />
+    from guba_comment
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+    <if test="orderByClause != null">
+      order by ${orderByClause}
+    </if>
+  </select>
+  <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="ResultMapWithBLOBs">
+    select 
+    <include refid="Base_Column_List" />
+    ,
+    <include refid="Blob_Column_List" />
+    from guba_comment
+    where id = #{id,jdbcType=BIGINT}
+  </select>
+  <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">
+    delete from guba_comment
+    where id = #{id,jdbcType=BIGINT}
+  </delete>
+  <delete id="deleteByExample" parameterType="com.infoanalyse.dao.model.GubaCommentDOExample">
+    delete from guba_comment
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </delete>
+  <insert id="insert" keyColumn="id" keyProperty="id" parameterType="com.infoanalyse.dao.model.GubaCommentDO" useGeneratedKeys="true">
+    insert into guba_comment (comment_id, post_id, author_name, 
+      author_id, like_count, reply_to_comment_id, 
+      reply_to_user, publish_time, crawl_time, 
+      content)
+    values (#{commentId,jdbcType=BIGINT}, #{postId,jdbcType=BIGINT}, #{authorName,jdbcType=VARCHAR}, 
+      #{authorId,jdbcType=VARCHAR}, #{likeCount,jdbcType=INTEGER}, #{replyToCommentId,jdbcType=BIGINT}, 
+      #{replyToUser,jdbcType=VARCHAR}, #{publishTime,jdbcType=TIMESTAMP}, #{crawlTime,jdbcType=TIMESTAMP}, 
+      #{content,jdbcType=LONGVARCHAR})
+  </insert>
+  <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="com.infoanalyse.dao.model.GubaCommentDO" useGeneratedKeys="true">
+    insert into guba_comment
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="commentId != null">
+        comment_id,
+      </if>
+      <if test="postId != null">
+        post_id,
+      </if>
+      <if test="authorName != null">
+        author_name,
+      </if>
+      <if test="authorId != null">
+        author_id,
+      </if>
+      <if test="likeCount != null">
+        like_count,
+      </if>
+      <if test="replyToCommentId != null">
+        reply_to_comment_id,
+      </if>
+      <if test="replyToUser != null">
+        reply_to_user,
+      </if>
+      <if test="publishTime != null">
+        publish_time,
+      </if>
+      <if test="crawlTime != null">
+        crawl_time,
+      </if>
+      <if test="content != null">
+        content,
+      </if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="commentId != null">
+        #{commentId,jdbcType=BIGINT},
+      </if>
+      <if test="postId != null">
+        #{postId,jdbcType=BIGINT},
+      </if>
+      <if test="authorName != null">
+        #{authorName,jdbcType=VARCHAR},
+      </if>
+      <if test="authorId != null">
+        #{authorId,jdbcType=VARCHAR},
+      </if>
+      <if test="likeCount != null">
+        #{likeCount,jdbcType=INTEGER},
+      </if>
+      <if test="replyToCommentId != null">
+        #{replyToCommentId,jdbcType=BIGINT},
+      </if>
+      <if test="replyToUser != null">
+        #{replyToUser,jdbcType=VARCHAR},
+      </if>
+      <if test="publishTime != null">
+        #{publishTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="crawlTime != null">
+        #{crawlTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="content != null">
+        #{content,jdbcType=LONGVARCHAR},
+      </if>
+    </trim>
+  </insert>
+  <select id="countByExample" parameterType="com.infoanalyse.dao.model.GubaCommentDOExample" resultType="java.lang.Long">
+    select count(*) from guba_comment
+    <if test="_parameter != null">
+      <include refid="Example_Where_Clause" />
+    </if>
+  </select>
+  <update id="updateByExampleSelective" parameterType="map">
+    update guba_comment
+    <set>
+      <if test="row.id != null">
+        id = #{row.id,jdbcType=BIGINT},
+      </if>
+      <if test="row.commentId != null">
+        comment_id = #{row.commentId,jdbcType=BIGINT},
+      </if>
+      <if test="row.postId != null">
+        post_id = #{row.postId,jdbcType=BIGINT},
+      </if>
+      <if test="row.authorName != null">
+        author_name = #{row.authorName,jdbcType=VARCHAR},
+      </if>
+      <if test="row.authorId != null">
+        author_id = #{row.authorId,jdbcType=VARCHAR},
+      </if>
+      <if test="row.likeCount != null">
+        like_count = #{row.likeCount,jdbcType=INTEGER},
+      </if>
+      <if test="row.replyToCommentId != null">
+        reply_to_comment_id = #{row.replyToCommentId,jdbcType=BIGINT},
+      </if>
+      <if test="row.replyToUser != null">
+        reply_to_user = #{row.replyToUser,jdbcType=VARCHAR},
+      </if>
+      <if test="row.publishTime != null">
+        publish_time = #{row.publishTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="row.crawlTime != null">
+        crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="row.content != null">
+        content = #{row.content,jdbcType=LONGVARCHAR},
+      </if>
+    </set>
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByExampleWithBLOBs" parameterType="map">
+    update guba_comment
+    set id = #{row.id,jdbcType=BIGINT},
+      comment_id = #{row.commentId,jdbcType=BIGINT},
+      post_id = #{row.postId,jdbcType=BIGINT},
+      author_name = #{row.authorName,jdbcType=VARCHAR},
+      author_id = #{row.authorId,jdbcType=VARCHAR},
+      like_count = #{row.likeCount,jdbcType=INTEGER},
+      reply_to_comment_id = #{row.replyToCommentId,jdbcType=BIGINT},
+      reply_to_user = #{row.replyToUser,jdbcType=VARCHAR},
+      publish_time = #{row.publishTime,jdbcType=TIMESTAMP},
+      crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP},
+      content = #{row.content,jdbcType=LONGVARCHAR}
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByExample" parameterType="map">
+    update guba_comment
+    set id = #{row.id,jdbcType=BIGINT},
+      comment_id = #{row.commentId,jdbcType=BIGINT},
+      post_id = #{row.postId,jdbcType=BIGINT},
+      author_name = #{row.authorName,jdbcType=VARCHAR},
+      author_id = #{row.authorId,jdbcType=VARCHAR},
+      like_count = #{row.likeCount,jdbcType=INTEGER},
+      reply_to_comment_id = #{row.replyToCommentId,jdbcType=BIGINT},
+      reply_to_user = #{row.replyToUser,jdbcType=VARCHAR},
+      publish_time = #{row.publishTime,jdbcType=TIMESTAMP},
+      crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP}
+    <if test="example != null">
+      <include refid="Update_By_Example_Where_Clause" />
+    </if>
+  </update>
+  <update id="updateByPrimaryKeySelective" parameterType="com.infoanalyse.dao.model.GubaCommentDO">
+    update guba_comment
+    <set>
+      <if test="commentId != null">
+        comment_id = #{commentId,jdbcType=BIGINT},
+      </if>
+      <if test="postId != null">
+        post_id = #{postId,jdbcType=BIGINT},
+      </if>
+      <if test="authorName != null">
+        author_name = #{authorName,jdbcType=VARCHAR},
+      </if>
+      <if test="authorId != null">
+        author_id = #{authorId,jdbcType=VARCHAR},
+      </if>
+      <if test="likeCount != null">
+        like_count = #{likeCount,jdbcType=INTEGER},
+      </if>
+      <if test="replyToCommentId != null">
+        reply_to_comment_id = #{replyToCommentId,jdbcType=BIGINT},
+      </if>
+      <if test="replyToUser != null">
+        reply_to_user = #{replyToUser,jdbcType=VARCHAR},
+      </if>
+      <if test="publishTime != null">
+        publish_time = #{publishTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="crawlTime != null">
+        crawl_time = #{crawlTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="content != null">
+        content = #{content,jdbcType=LONGVARCHAR},
+      </if>
+    </set>
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+  <update id="updateByPrimaryKeyWithBLOBs" parameterType="com.infoanalyse.dao.model.GubaCommentDO">
+    update guba_comment
+    set comment_id = #{commentId,jdbcType=BIGINT},
+      post_id = #{postId,jdbcType=BIGINT},
+      author_name = #{authorName,jdbcType=VARCHAR},
+      author_id = #{authorId,jdbcType=VARCHAR},
+      like_count = #{likeCount,jdbcType=INTEGER},
+      reply_to_comment_id = #{replyToCommentId,jdbcType=BIGINT},
+      reply_to_user = #{replyToUser,jdbcType=VARCHAR},
+      publish_time = #{publishTime,jdbcType=TIMESTAMP},
+      crawl_time = #{crawlTime,jdbcType=TIMESTAMP},
+      content = #{content,jdbcType=LONGVARCHAR}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+  <update id="updateByPrimaryKey" parameterType="com.infoanalyse.dao.model.GubaCommentDO">
+    update guba_comment
+    set comment_id = #{commentId,jdbcType=BIGINT},
+      post_id = #{postId,jdbcType=BIGINT},
+      author_name = #{authorName,jdbcType=VARCHAR},
+      author_id = #{authorId,jdbcType=VARCHAR},
+      like_count = #{likeCount,jdbcType=INTEGER},
+      reply_to_comment_id = #{replyToCommentId,jdbcType=BIGINT},
+      reply_to_user = #{replyToUser,jdbcType=VARCHAR},
+      publish_time = #{publishTime,jdbcType=TIMESTAMP},
+      crawl_time = #{crawlTime,jdbcType=TIMESTAMP}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+</mapper>
