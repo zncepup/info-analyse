@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>投资信息分析系统</title>
+  <title>知乎抓取控制台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;650&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
@@ -124,7 +124,7 @@
     .stat { padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.85); border: 1px solid var(--stroke); }
     .stat h3 { margin: 0; font-size: 1.2rem; }
     .stat span { display: block; color: var(--muted-2); font-size: 0.82rem; margin-top: 6px; }
-    .hero-panel { grid-column: span 5; display: flex; flex-direction: column; gap: 18px; }
+    .hero-panel { grid-column: span 12; display: flex; flex-direction: column; gap: 18px; }
     .card { background: var(--surface); border-radius: var(--radius); padding: 20px; border: 1px solid var(--stroke); box-shadow: var(--shadow); }
     .card h2 { margin: 0 0 12px; font-size: 1.05rem; }
     .form-grid { display: grid; gap: 12px; }
@@ -176,8 +176,8 @@
     .panel.span-8 { grid-column: span 8; }
     .panel.span-12 { grid-column: span 12; }
     .panel h3 { margin: 0 0 12px; font-size: 1.02rem; }
-    .task-list, .file-list, .export-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-    .task-item, .file-item, .export-item {
+    .task-list, .file-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .task-item, .file-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -188,7 +188,7 @@
       border: 1px solid rgba(12, 31, 35, 0.05);
       font-size: 0.88rem;
     }
-    .task-item.empty, .file-item.empty, .export-item.empty { color: var(--muted-2); justify-content: center; }
+    .task-item.empty, .file-item.empty { color: var(--muted-2); justify-content: center; }
     .tag { padding: 4px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
     .tag.success { background: rgba(15, 118, 110, 0.15); color: var(--accent); }
     .tag.warn { background: rgba(217, 119, 6, 0.16); color: var(--accent-2); }
@@ -334,7 +334,7 @@
       <div class="brand">
         <div class="brand-mark">IA</div>
         <div>
-          <div>Investment Info Analyse</div>
+          <div>知乎抓取控制台</div>
           <div class="chip">LAN Ready</div>
         </div>
       </div>
@@ -342,36 +342,15 @@
         <a href="#overview">概览</a>
         <a href="#tasks">任务</a>
         <a href="#content">内容</a>
-        <a href="#logs">日志</a>
       </nav>
       <div class="actions">
         <button class="btn btn-ghost" type="button" data-action="refresh-all">刷新全部</button>
-        <button class="btn btn-primary" type="button" data-action="new-task">新建抓取</button>
+        <button class="btn btn-primary" type="button" data-action="open-tasks">前往任务</button>
       </div>
     </header>
 
     <main>
       <section class="hero" id="overview">
-        <div class="hero-copy">
-          <div class="eyebrow">Focus · Insight · Velocity</div>
-          <h1>投资信息分析系统</h1>
-          <p>已支持 ZhihuCommand 全功能：登录、抓取、同步、AI 分析与 Word 导出。页面按钮均真实调用后端接口，支持局域网访问与 iOS 浏览。</p>
-          <div class="stat-grid">
-            <div class="stat">
-              <h3 id="stat-total">0</h3>
-              <span>任务总数</span>
-            </div>
-            <div class="stat">
-              <h3 id="stat-running">0</h3>
-              <span>进行中</span>
-            </div>
-            <div class="stat">
-              <h3 id="stat-failed">0</h3>
-              <span>失败</span>
-            </div>
-          </div>
-        </div>
-
         <div class="hero-panel">
           <div class="card" id="status-card">
             <h2>登录与状态</h2>
@@ -403,20 +382,6 @@
             </div>
           </div>
 
-          <div class="card">
-            <h2>快速抓取</h2>
-            <form class="form-grid" id="quick-user-form">
-              <div>
-                <label for="quick-user">用户 ID</label>
-                <input id="quick-user" name="userId" placeholder="例如：mr-dang-77" required>
-              </div>
-              <div class="actions">
-                <button class="btn btn-primary" type="submit">抓取最近 10 条</button>
-                <button class="btn btn-ghost" type="button" data-action="open-tasks">查看任务</button>
-              </div>
-              <div class="hint">默认开启保存 Markdown，便于后续浏览与分析。</div>
-            </form>
-          </div>
         </div>
       </section>
 
@@ -445,11 +410,11 @@
           <form class="form-grid" id="sync-form">
             <div>
               <label for="sync-user">用户 ID</label>
-              <input id="sync-user" name="userId" placeholder="例如：mr-dang-77" required>
+              <input id="sync-user" name="userId" placeholder="例如：mr-dang-77" value="mr-dang-77" required>
             </div>
             <div>
               <label for="sync-limit">同步数量</label>
-              <input id="sync-limit" name="limit" type="number" min="1" value="50">
+              <input id="sync-limit" name="limit" type="number" min="1" value="3">
             </div>
             <div class="toggle">
               <span>抓取作者评论</span>
@@ -459,28 +424,6 @@
           </form>
         </div>
 
-        <div class="panel span-6">
-          <h3>AI 分析与导出</h3>
-          <form class="form-grid" id="analyze-all-form">
-            <div>
-              <label for="analyze-author">作者目录</label>
-              <input id="analyze-author" name="author" placeholder="例如：作者名或 userId" required>
-            </div>
-            <div>
-              <label for="analyze-delay">分析间隔 (秒)</label>
-              <input id="analyze-delay" name="delay" type="number" min="1" value="3">
-            </div>
-            <button class="btn btn-outline" type="submit">批量分析作者内容</button>
-          </form>
-          <form class="form-grid" id="export-all-form" style="margin-top: 14px;">
-            <div>
-              <label for="export-author">作者目录</label>
-              <input id="export-author" name="author" placeholder="例如：作者名或 userId" required>
-            </div>
-            <button class="btn btn-ghost" type="submit">批量导出 Word</button>
-          </form>
-          <div class="hint">爬取成功后将自动进行 AI 分析，导出可在导出中心下载。</div>
-        </div>
       </section>
 
       <section class="grid" id="task-queue">
@@ -504,7 +447,7 @@
       </section>
 
       <section class="grid" id="content">
-        <div class="panel span-6">
+        <div class="panel span-12">
           <div class="toolbar">
             <h3>内容浏览</h3>
             <div class="actions">
@@ -519,26 +462,6 @@
             <ul class="file-list" id="file-list"></ul>
           </div>
         </div>
-
-        <div class="panel span-6">
-          <div class="toolbar">
-            <h3>导出中心</h3>
-            <div class="actions">
-              <button class="btn btn-ghost" type="button" data-action="refresh-exports">刷新导出</button>
-            </div>
-          </div>
-          <ul class="export-list" id="export-list"></ul>
-        </div>
-      </section>
-
-      <section class="panel span-12" id="logs">
-        <div class="toolbar">
-          <h3>运行日志</h3>
-          <div class="actions">
-            <button class="btn btn-ghost" type="button" data-action="refresh-logs">刷新日志</button>
-          </div>
-        </div>
-        <pre class="log-view" id="log-content">等待加载日志...</pre>
       </section>
     </main>
 
@@ -561,14 +484,7 @@
     const toast = document.getElementById('toast');
     const taskList = document.getElementById('task-list');
     const fileList = document.getElementById('file-list');
-    const exportList = document.getElementById('export-list');
-    const logContent = document.getElementById('log-content');
     const authorSelect = document.getElementById('author-select');
-
-    const statTotal = document.getElementById('stat-total');
-    const statRunning = document.getElementById('stat-running');
-    const statFailed = document.getElementById('stat-failed');
-
     const statusLogin = document.getElementById('status-login');
     const statusCookies = document.getElementById('status-cookies');
     const qrLoginState = document.getElementById('qr-login-state');
@@ -596,7 +512,6 @@
     const statusClass = (status) => {
       if (status === 'COMPLETED') return 'success';
       if (status === 'FAILED') return 'warn';
-      if (status === 'RUNNING') return 'info';
       return 'info';
     };
 
@@ -619,7 +534,7 @@
           const data = await res.json();
           text = data.message || data.error || text;
         } catch (e) {
-          try { text = await res.text(); } catch (err) {}
+          text = await res.text();
         }
         throw new Error(text);
       }
@@ -651,7 +566,6 @@
     };
 
     const renderQrState = (payload) => {
-      if (!payload) return;
       const label = qrStatusLabels[payload.status] || payload.status || '--';
       qrLoginState.textContent = label;
       qrLoginMessage.textContent = payload.message || '';
@@ -680,71 +594,12 @@
       }
     };
 
-    const refreshTasks = async () => {
-      try {
-        const tasks = await fetchJson('/api/tasks');
-        renderTasks(tasks);
-      } catch (e) {
-        showToast('任务列表获取失败');
-      }
-    };
-
-    const refreshOutputs = async () => {
-      try {
-        const authors = await fetchJson('/api/outputs');
-        renderAuthors(authors);
-      } catch (e) {
-        showToast('作者列表获取失败');
-      }
-    };
-
-    const refreshFiles = async (author) => {
-      if (!author) {
-        fileList.innerHTML = '<li class="file-item empty">暂无作者目录</li>';
-        return;
-      }
-      try {
-        const files = await fetchJson(`/api/outputs/${encodeURIComponent(author)}/files`);
-        renderFiles(author, files);
-      } catch (e) {
-        showToast('文件列表获取失败');
-      }
-    };
-
-    const refreshExports = async () => {
-      try {
-        const exports = await fetchJson('/api/outputs/exports');
-        renderExports(exports);
-      } catch (e) {
-        showToast('导出列表获取失败');
-      }
-    };
-
-    const refreshLogs = async () => {
-      try {
-        const data = await fetchJson('/api/logs?lines=200');
-        logContent.textContent = data.lines.join('\n');
-      } catch (e) {
-        logContent.textContent = '日志获取失败';
-      }
-    };
-
     const renderTasks = (tasks) => {
       taskList.innerHTML = '';
       if (!tasks.length) {
         taskList.innerHTML = '<li class="task-item empty">暂无任务</li>';
-        statTotal.textContent = '0';
-        statRunning.textContent = '0';
-        statFailed.textContent = '0';
         return;
       }
-      const total = tasks.length;
-      const running = tasks.filter(t => t.status === 'RUNNING' || t.status === 'PENDING').length;
-      const failed = tasks.filter(t => t.status === 'FAILED').length;
-      statTotal.textContent = total;
-      statRunning.textContent = running;
-      statFailed.textContent = failed;
-
       tasks.slice(0, 8).forEach(task => {
         const li = document.createElement('li');
         li.className = 'task-item';
@@ -760,35 +615,24 @@
       });
     };
 
-    const renderAuthors = (authors) => {
-      authorSelect.innerHTML = '';
-      if (!authors.length) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '暂无作者目录';
-        authorSelect.appendChild(opt);
-        renderFiles('', []);
-        return;
+    const refreshTasks = async () => {
+      try {
+        const tasks = await fetchJson('/api/tasks');
+        renderTasks(tasks);
+      } catch (e) {
+        showToast('任务列表获取失败');
       }
-      authors.forEach(author => {
-        const opt = document.createElement('option');
-        opt.value = author.name;
-        opt.textContent = `${author.name} (${author.mdCount} 篇)`;
-        authorSelect.appendChild(opt);
-      });
-      refreshFiles(authorSelect.value);
     };
 
-    const renderFiles = (author, files) => {
+    const renderFiles = (files) => {
       fileList.innerHTML = '';
-      const mdFiles = files.filter(f => f.type === 'md');
+      const mdFiles = files.filter((f) => f.type === 'md');
       if (!mdFiles.length) {
         fileList.innerHTML = '<li class="file-item empty">该作者暂无内容</li>';
         return;
       }
       const displayTitle = (name) => {
-        if (!name) return '';
-        let base = name.replace(/\.md$/i, '').replace(/\.docx$/i, '');
+        let base = (name || '').replace(/\.md$/i, '').replace(/\.docx$/i, '');
         if (base.startsWith('article_')) {
           base = base.replace(/^article_\d+_/, '');
         } else {
@@ -796,58 +640,54 @@
         }
         return base.replace(/_/g, ' ');
       };
-      mdFiles.slice(0, 10).forEach(file => {
+      mdFiles.slice(0, 10).forEach((file) => {
         const li = document.createElement('li');
         li.className = 'file-item';
-        const relativePath = file.relativePath;
-        const filePath = `output/${author}/${relativePath}`;
-        const analyzeButton = file.analyzed
-          ? ''
-          : `<button class="primary" data-action="analyze-file" data-path="${filePath}">AI 分析</button>`;
         li.innerHTML = `
           <span>
             <a class="file-link" href="${file.viewUrl}" target="_blank">${displayTitle(file.name)}</a><br>
             <small>${formatTime(file.lastModified)}</small>
           </span>
-          <div class="file-actions">
-            ${analyzeButton}
-          </div>
         `;
         fileList.appendChild(li);
       });
     };
 
-    const renderExports = (exports) => {
-      exportList.innerHTML = '';
-      if (!exports.length) {
-        exportList.innerHTML = '<li class="export-item empty">暂无导出文件</li>';
+    const refreshFiles = async (author) => {
+      if (!author) {
+        fileList.innerHTML = '<li class="file-item empty">暂无作者目录</li>';
         return;
       }
-      const displayTitle = (name) => {
-        if (!name) return '';
-        let base = name.replace(/\.docx$/i, '');
-        if (base.startsWith('article_')) {
-          base = base.replace(/^article_\d+_/, '');
-        } else {
-          base = base.replace(/^\d+_/, '');
+      try {
+        const files = await fetchJson(`/api/outputs/${encodeURIComponent(author)}/files`);
+        renderFiles(files);
+      } catch (e) {
+        showToast('文件列表获取失败');
+      }
+    };
+
+    const refreshOutputs = async () => {
+      try {
+        const authors = await fetchJson('/api/outputs');
+        authorSelect.innerHTML = '';
+        if (!authors.length) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = '暂无作者目录';
+          authorSelect.appendChild(opt);
+          renderFiles([]);
+          return;
         }
-        return base.replace(/_/g, ' ');
-      };
-      exports.slice(0, 8).forEach(item => {
-        const li = document.createElement('li');
-        li.className = 'export-item';
-        const sizeKb = Math.max(1, Math.round(item.size / 1024));
-        li.innerHTML = `
-          <span>
-            <strong>${displayTitle(item.name)}</strong><br>
-            <small>${sizeKb} KB · ${formatTime(item.lastModified)}</small>
-          </span>
-          <div class="file-actions">
-            <a href="${item.downloadUrl}" target="_blank">下载</a>
-          </div>
-        `;
-        exportList.appendChild(li);
-      });
+        authors.forEach((author) => {
+          const opt = document.createElement('option');
+          opt.value = author.name;
+          opt.textContent = `${author.name} (${author.mdCount} 篇)`;
+          authorSelect.appendChild(opt);
+        });
+        refreshFiles(authorSelect.value);
+      } catch (e) {
+        showToast('作者列表获取失败');
+      }
     };
 
     document.querySelector('[data-action="start-qr-login"]').addEventListener('click', async () => {
@@ -870,8 +710,6 @@
       }
       try {
         await postJson(`/api/zhihu/login/qr/session/${encodeURIComponent(qrLoginSessionId)}/cancel`);
-      } catch (e) {
-        // ignore 404 here
       } finally {
         stopQrPolling();
         qrLoginSessionId = null;
@@ -884,50 +722,14 @@
     document.querySelector('[data-action="refresh-status"]').addEventListener('click', refreshStatus);
     document.querySelector('[data-action="refresh-tasks"]').addEventListener('click', refreshTasks);
     document.querySelector('[data-action="refresh-outputs"]').addEventListener('click', refreshOutputs);
-    document.querySelector('[data-action="refresh-exports"]').addEventListener('click', refreshExports);
-    document.querySelector('[data-action="refresh-logs"]').addEventListener('click', refreshLogs);
-
     document.querySelector('[data-action="refresh-all"]').addEventListener('click', () => {
       refreshStatus();
       refreshTasks();
       refreshOutputs();
-      refreshExports();
-      refreshLogs();
     });
-    document.querySelector('[data-action="refresh-page"]').addEventListener('click', () => {
-      window.location.reload();
-    });
-
-    document.querySelector('[data-action="new-task"]').addEventListener('click', () => {
-      document.getElementById('quick-user').focus();
-      document.getElementById('tasks').scrollIntoView({ behavior: 'smooth' });
-    });
-
+    document.querySelector('[data-action="refresh-page"]').addEventListener('click', () => window.location.reload());
     document.querySelector('[data-action="open-tasks"]').addEventListener('click', () => {
       document.getElementById('tasks').scrollIntoView({ behavior: 'smooth' });
-    });
-
-    document.getElementById('quick-user-form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const userId = event.target.userId.value.trim();
-      if (!userId) {
-        showToast('请输入用户 ID');
-        return;
-      }
-      try {
-        await postJson('/api/zhihu/user', {
-          userId,
-          limit: 10,
-          showBrowser: false,
-          save: true,
-          withComments: false
-        });
-        showToast('任务已创建');
-        event.target.reset();
-        refreshTasks();
-      } catch (e) {
-        showToast(e.message || '创建失败');
-      }
     });
 
     document.getElementById('fetch-form').addEventListener('submit', async (event) => {
@@ -954,7 +756,7 @@
       event.preventDefault();
       const payload = {
         userId: event.target.userId.value.trim(),
-        limit: Number(event.target.limit.value || 50),
+        limit: Number(event.target.limit.value || 3),
         withComments: document.getElementById('sync-with-comments').checked
       };
       if (!payload.userId) {
@@ -970,61 +772,7 @@
       }
     });
 
-    document.getElementById('analyze-all-form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const payload = {
-        author: event.target.author.value.trim(),
-        delay: Number(event.target.delay.value || 3)
-      };
-      if (!payload.author) {
-        showToast('请输入作者目录');
-        return;
-      }
-      try {
-        await postJson('/api/zhihu/analyze-all', payload);
-        showToast('批量分析任务已创建');
-        refreshTasks();
-      } catch (e) {
-        showToast(e.message || '创建失败');
-      }
-    });
-
-    document.getElementById('export-all-form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const payload = {
-        author: event.target.author.value.trim()
-      };
-      if (!payload.author) {
-        showToast('请输入作者目录');
-        return;
-      }
-      try {
-        await postJson('/api/zhihu/export-word-all', payload);
-        showToast('批量导出任务已创建');
-        refreshTasks();
-        refreshExports();
-      } catch (e) {
-        showToast(e.message || '创建失败');
-      }
-    });
-
-    authorSelect.addEventListener('change', (event) => {
-      refreshFiles(event.target.value);
-    });
-
-    fileList.addEventListener('click', async (event) => {
-      if (event.target.matches('[data-action="analyze-file"]')) {
-        const path = event.target.getAttribute('data-path');
-        try {
-          await postJson('/api/zhihu/analyze', { file: path });
-          showToast('分析任务已创建');
-          refreshTasks();
-          setTimeout(() => refreshFiles(authorSelect.value), 1200);
-        } catch (e) {
-          showToast(e.message || '分析失败');
-        }
-      }
-    });
+    authorSelect.addEventListener('change', (event) => refreshFiles(event.target.value));
 
     const navLinks = document.querySelectorAll('.mobile-nav a');
     const setActiveNav = () => {
@@ -1034,7 +782,7 @@
         { id: 'task-queue', key: 'queue' },
         { id: 'content', key: 'content' }
       ];
-      navLinks.forEach(link => link.classList.remove('active'));
+      navLinks.forEach((link) => link.classList.remove('active'));
       for (let i = sections.length - 1; i >= 0; i--) {
         const section = document.getElementById(sections[i].id);
         if (section && section.offsetTop <= y) {
@@ -1045,18 +793,14 @@
       }
     };
 
-    navLinks.forEach(link => {
-      link.addEventListener('click', () => {
-        navLinks.forEach(l => l.classList.remove('active'));
-        link.classList.add('active');
-      });
-    });
+    navLinks.forEach((link) => link.addEventListener('click', () => {
+      navLinks.forEach((item) => item.classList.remove('active'));
+      link.classList.add('active');
+    }));
 
     refreshStatus();
     refreshTasks();
     refreshOutputs();
-    refreshExports();
-    refreshLogs();
     setInterval(refreshTasks, 5000);
     window.addEventListener('scroll', setActiveNav, { passive: true });
     setActiveNav();
