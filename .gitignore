@@ -51,3 +51,4 @@ zhihu_cookies.json
 debug_page.html
 app-run.err
 .deploy-tmp/
+.local-docker/

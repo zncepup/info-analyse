@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -56,17 +57,19 @@ public class OutputController {
         try (Stream<Path> stream = Files.walk(authorDir)) {
             stream.filter(Files::isRegularFile)
                     .filter(p -> hasExtension(p, ".md") || hasExtension(p, ".docx"))
+                    .filter(p -> !p.getFileName().toString().equalsIgnoreCase("INDEX.md"))
                     .forEach(p -> {
                         try {
                             String relative = authorDir.relativize(p).toString().replace("\\", "/");
-                            String name = p.getFileName().toString();
+                            String fileName = p.getFileName().toString();
                             long size = Files.size(p);
                             long modified = Files.getLastModifiedTime(p).toMillis();
                             String type = hasExtension(p, ".docx") ? "docx" : "md";
                             String downloadUrl = "/output/" + author + "/" + relative;
-                            String viewUrl = type.equals("md") ? "/view/" + author + "/" + name : null;
+                            String viewUrl = type.equals("md") ? "/view/" + author + "/" + fileName : null;
                             boolean analyzed = type.equals("md") && isAnalyzed(p);
-                            files.add(new FileInfo(name, relative, size, modified, type, viewUrl, downloadUrl, analyzed));
+                            String displayName = type.equals("md") ? readMarkdownTitle(p).orElse(fileName) : fileName;
+                            files.add(new FileInfo(displayName, relative, size, modified, type, viewUrl, downloadUrl, analyzed));
                         } catch (IOException ignored) {
                         }
                     });
@@ -140,6 +143,23 @@ public class OutputController {
         return path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(ext);
     }
 
+    private java.util.Optional<String> readMarkdownTitle(Path path) {
+        try (var reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            for (int i = 0; i < 30; i++) {
+                String line = reader.readLine();
+                if (line == null) {
+                    break;
+                }
+                String trimmed = line.trim();
+                if (trimmed.startsWith("# ")) {
+                    return java.util.Optional.of(trimmed.substring(2).trim());
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return java.util.Optional.empty();
+    }
+
     public record AuthorInfo(String name, int mdCount, int docCount, long lastModified) {}
 
     public record FileInfo(String name, String relativePath, long size, long lastModified, String type,
@@ -148,7 +168,15 @@ public class OutputController {
     private boolean isAnalyzed(Path path) {
         try {
             String content = Files.readString(path);
-            return content.contains("## AI 投资线索分析");
+            if (!content.contains("## AI ")) {
+                return false;
+            }
+            String lower = content.toLowerCase(Locale.ROOT);
+            return !content.contains("分析失败")
+                    && !content.contains("DeepSeek API 未配置")
+                    && !content.contains("API 调用失败")
+                    && !lower.contains("invalid header value")
+                    && !lower.contains("analysis failed");
         } catch (IOException e) {
             return false;
         }

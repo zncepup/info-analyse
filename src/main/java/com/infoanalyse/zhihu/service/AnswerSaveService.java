@@ -17,6 +17,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -35,6 +36,9 @@ public class AnswerSaveService {
     private static final Logger logger = LoggerFactory.getLogger(AnswerSaveService.class);
     private static final String OUTPUT_DIR = "output";
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String FILE_SYSTEM_ENCODING = System.getProperty("sun.jnu.encoding",
+            System.getProperty("file.encoding", "UTF-8"));
+    private static final boolean ASCII_ONLY_FILE_SYSTEM = isAsciiOnlyFileSystem();
     
     private final HttpClient httpClient;
     
@@ -467,9 +471,35 @@ public class AnswerSaveService {
      */
     private String sanitizeFileName(String name) {
         if (name == null) return "untitled";
-        return name.replaceAll("[\\\\/:*?\"<>|]", "_")
-                   .replaceAll("\\s+", "_")
-                   .trim();
+        String cleaned = name.replaceAll("[\\\\/:*?\"<>|]", "_")
+                .replaceAll("\\s+", "_")
+                .trim();
+        if (cleaned.isEmpty()) {
+            cleaned = "untitled";
+        }
+
+        // Some Docker/Linux environments expose an ASCII-only native filesystem encoding.
+        // In that case, non-ASCII filenames will fail with "unmappable characters".
+        if (ASCII_ONLY_FILE_SYSTEM) {
+            String asciiSafe = cleaned.replaceAll("[^\\p{ASCII}]", "_")
+                    .replaceAll("[^A-Za-z0-9._-]", "_")
+                    .replaceAll("_+", "_")
+                    .replaceAll("^[._-]+|[._-]+$", "");
+            if (asciiSafe.isEmpty()) {
+                asciiSafe = "item_" + Integer.toUnsignedString(cleaned.hashCode(), 36);
+            }
+            return asciiSafe;
+        }
+        return cleaned;
+    }
+
+    private static boolean isAsciiOnlyFileSystem() {
+        try {
+            Charset charset = Charset.forName(FILE_SYSTEM_ENCODING);
+            return !charset.newEncoder().canEncode("中文");
+        } catch (Exception e) {
+            return false;
+        }
     }
     
     /**
