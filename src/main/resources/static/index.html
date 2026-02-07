@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -223,6 +223,24 @@
       color: var(--accent);
     }
     .hint { font-size: 0.82rem; color: var(--muted-2); line-height: 1.5; }
+    .qr-login-box {
+      margin-top: 6px;
+      padding: 12px;
+      border: 1px dashed rgba(15, 118, 110, 0.35);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.72);
+      display: grid;
+      gap: 10px;
+    }
+    .qr-login-image {
+      width: min(240px, 100%);
+      aspect-ratio: 1;
+      border-radius: 12px;
+      border: 1px solid rgba(12, 31, 35, 0.1);
+      background: rgba(12, 31, 35, 0.03);
+      object-fit: contain;
+      display: none;
+    }
     .footer {
       margin-top: 32px;
       padding: 20px 22px;
@@ -372,6 +390,18 @@
                 <button class="btn btn-ghost" type="button" data-action="refresh-status">刷新状态</button>
               </div>
               <div class="hint">若提示需要登录，请点击“打开登录浏览器”，完成登录后再保存 Cookies。</div>
+              <div class="qr-login-box">
+                <div class="actions">
+                  <button class="btn btn-primary" type="button" data-action="start-qr-login">扫码登录</button>
+                  <button class="btn btn-ghost" type="button" data-action="stop-qr-login">结束会话</button>
+                </div>
+                <div class="status-row">
+                  <span>扫码状态</span>
+                  <strong id="qr-login-state">未启动</strong>
+                </div>
+                <img id="qr-login-image" class="qr-login-image" alt="Zhihu QR Login">
+                <div class="hint" id="qr-login-message">点击扫码登录后，系统会展示知乎二维码，扫码确认后自动保存登录状态。</div>
+              </div>
             </div>
           </div>
 
@@ -543,12 +573,26 @@
 
     const statusLogin = document.getElementById('status-login');
     const statusCookies = document.getElementById('status-cookies');
+    const qrLoginState = document.getElementById('qr-login-state');
+    const qrLoginMessage = document.getElementById('qr-login-message');
+    const qrLoginImage = document.getElementById('qr-login-image');
+
+    let qrLoginSessionId = null;
+    let qrLoginTimer = null;
 
     const statusLabels = {
       PENDING: '排队中',
       RUNNING: '进行中',
       COMPLETED: '已完成',
       FAILED: '失败'
+    };
+
+    const qrStatusLabels = {
+      WAITING: '等待扫码',
+      SCANNED: '已扫码，待确认',
+      SUCCESS: '登录成功',
+      EXPIRED: '二维码过期',
+      FAILED: '登录失败'
     };
 
     const statusClass = (status) => {
@@ -598,6 +642,43 @@
       } catch (e) {
         statusLogin.textContent = '--';
         statusCookies.textContent = '--';
+      }
+    };
+
+    const stopQrPolling = () => {
+      if (qrLoginTimer) {
+        clearInterval(qrLoginTimer);
+        qrLoginTimer = null;
+      }
+    };
+
+    const renderQrState = (payload) => {
+      if (!payload) return;
+      const label = qrStatusLabels[payload.status] || payload.status || '--';
+      qrLoginState.textContent = label;
+      qrLoginMessage.textContent = payload.message || '';
+      if (payload.qrImage) {
+        qrLoginImage.src = payload.qrImage;
+        qrLoginImage.style.display = 'block';
+      }
+    };
+
+    const pollQrState = async () => {
+      if (!qrLoginSessionId) return;
+      try {
+        const payload = await fetchJson(`/api/zhihu/login/qr/session/${encodeURIComponent(qrLoginSessionId)}`);
+        renderQrState(payload);
+        if (['SUCCESS', 'EXPIRED', 'FAILED'].includes(payload.status)) {
+          stopQrPolling();
+          if (payload.status === 'SUCCESS') {
+            refreshStatus();
+          }
+        }
+      } catch (e) {
+        stopQrPolling();
+        qrLoginSessionId = null;
+        qrLoginState.textContent = '--';
+        qrLoginMessage.textContent = e.message || '扫码会话已失效';
       }
     };
 
@@ -792,6 +873,37 @@
       }
     });
 
+    document.querySelector('[data-action="start-qr-login"]').addEventListener('click', async () => {
+      try {
+        stopQrPolling();
+        const payload = await postJson('/api/zhihu/login/qr/session');
+        qrLoginSessionId = payload.sessionId;
+        renderQrState(payload);
+        qrLoginTimer = setInterval(pollQrState, 1800);
+        showToast('二维码已生成，请扫码');
+      } catch (e) {
+        showToast(e.message || '二维码登录启动失败');
+      }
+    });
+
+    document.querySelector('[data-action="stop-qr-login"]').addEventListener('click', async () => {
+      if (!qrLoginSessionId) {
+        qrLoginState.textContent = '未启动';
+        return;
+      }
+      try {
+        await postJson(`/api/zhihu/login/qr/session/${encodeURIComponent(qrLoginSessionId)}/cancel`);
+      } catch (e) {
+        // ignore 404 here
+      } finally {
+        stopQrPolling();
+        qrLoginSessionId = null;
+        qrLoginState.textContent = '已停止';
+        qrLoginMessage.textContent = '扫码会话已结束';
+        qrLoginImage.style.display = 'none';
+      }
+    });
+
     document.querySelector('[data-action="refresh-status"]').addEventListener('click', refreshStatus);
     document.querySelector('[data-action="refresh-tasks"]').addEventListener('click', refreshTasks);
     document.querySelector('[data-action="refresh-outputs"]').addEventListener('click', refreshOutputs);
@@ -810,7 +922,7 @@
     });
 
     document.querySelector('[data-action="new-task"]').addEventListener('click', () => {
-      document.getElementById('user-id').focus();
+      document.getElementById('quick-user').focus();
       document.getElementById('tasks').scrollIntoView({ behavior: 'smooth' });
     });
 
@@ -974,3 +1086,4 @@
   </script>
 </body>
 </html>
+

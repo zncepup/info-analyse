@@ -6,18 +6,22 @@ import com.infoanalyse.zhihu.model.ZhihuAnswer;
 import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
 import com.microsoft.playwright.*;
+import com.microsoft.playwright.options.Cookie;
 import org.jsoup.Jsoup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 基于 Playwright 的知乎数据抓取服务
@@ -68,6 +72,7 @@ public class ZhihuBrowserCrawlerService {
     public void closeBrowser() {
         loggedInPage = null;
         loggedInContext = null;
+        qrLoginSession = null;
         if (browser != null) {
             browser.close();
             browser = null;
@@ -84,6 +89,43 @@ public class ZhihuBrowserCrawlerService {
     private Page loggedInPage;
     
     private static final String COOKIES_FILE = "zhihu_cookies.json";
+    private static final long QR_LOGIN_TIMEOUT_MS = 3 * 60 * 1000L;
+    private QrLoginSession qrLoginSession;
+
+    public enum QrLoginStatus {
+        WAITING,
+        SCANNED,
+        SUCCESS,
+        EXPIRED,
+        FAILED;
+
+        public boolean terminal() {
+            return this == SUCCESS || this == EXPIRED || this == FAILED;
+        }
+    }
+
+    public record QrLoginSnapshot(
+            String sessionId,
+            QrLoginStatus status,
+            String qrImage,
+            String message,
+            long createdAt,
+            long updatedAt,
+            long expiresAt
+    ) {
+    }
+
+    private static class QrLoginSession {
+        private String id;
+        private BrowserContext context;
+        private Page page;
+        private QrLoginStatus status;
+        private String qrImage;
+        private String message;
+        private long createdAt;
+        private long updatedAt;
+        private long expiresAt;
+    }
     
     /**
      * 打开浏览器让用户登录，登录后保存 cookies
@@ -139,12 +181,263 @@ public class ZhihuBrowserCrawlerService {
      * 检查是否已登录
      */
     public boolean isLoggedIn() {
-        return loggedInPage != null && loggedInContext != null;
+        if (hasValidLoginCookies()) {
+            return true;
+        }
+        if (loggedInContext != null && hasLoginCookie(loggedInContext.cookies("https://www.zhihu.com"))) {
+            return true;
+        }
+        return qrLoginSession != null && qrLoginSession.status == QrLoginStatus.SUCCESS;
     }
     
     /**
      * 抓取用户回答列表
      */
+    public synchronized QrLoginSnapshot startQrLoginSession() {
+        closeQrLoginSession(true);
+        initBrowser();
+
+        QrLoginSession session = new QrLoginSession();
+        session.id = UUID.randomUUID().toString();
+        session.createdAt = System.currentTimeMillis();
+        session.updatedAt = session.createdAt;
+        session.expiresAt = session.createdAt + QR_LOGIN_TIMEOUT_MS;
+        session.status = QrLoginStatus.WAITING;
+        session.message = "等待扫码";
+
+        try {
+            session.context = browser.newContext(new Browser.NewContextOptions()
+                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .setViewportSize(1280, 900));
+            session.page = session.context.newPage();
+            session.page.navigate("https://www.zhihu.com/signin?next=%2F");
+            session.page.waitForTimeout(1200);
+            switchToQrMode(session.page);
+            session.page.waitForTimeout(800);
+            session.qrImage = captureQrImage(session.page);
+            if (session.qrImage == null || session.qrImage.isBlank()) {
+                session.qrImage = capturePageImage(session.page);
+                session.message = "未找到独立二维码，已返回登录页截图";
+            }
+            updateQrLoginSession(session);
+        } catch (Exception e) {
+            session.status = QrLoginStatus.FAILED;
+            session.message = "初始化登录页失败: " + e.getMessage();
+            safeClose(session);
+        }
+
+        qrLoginSession = session;
+        return snapshotOf(session);
+    }
+
+    public synchronized QrLoginSnapshot getQrLoginSession(String sessionId) {
+        if (qrLoginSession == null || !qrLoginSession.id.equals(sessionId)) {
+            throw new RuntimeException("二维码登录会话不存在");
+        }
+        updateQrLoginSession(qrLoginSession);
+        return snapshotOf(qrLoginSession);
+    }
+
+    public synchronized void cancelQrLoginSession(String sessionId) {
+        if (qrLoginSession == null || !qrLoginSession.id.equals(sessionId)) {
+            throw new RuntimeException("二维码登录会话不存在");
+        }
+        closeQrLoginSession(true);
+    }
+
+    private synchronized void updateQrLoginSession(QrLoginSession session) {
+        long now = System.currentTimeMillis();
+        if (session == null) {
+            return;
+        }
+        if (session.status.terminal()) {
+            return;
+        }
+        if (now > session.expiresAt) {
+            session.status = QrLoginStatus.EXPIRED;
+            session.message = "二维码已过期，请重新获取";
+            session.updatedAt = now;
+            safeClose(session);
+            return;
+        }
+        if (session.context == null || session.page == null || session.page.isClosed()) {
+            session.status = QrLoginStatus.FAILED;
+            session.message = "登录页面已关闭";
+            session.updatedAt = now;
+            safeClose(session);
+            return;
+        }
+
+        try {
+            if (hasLoginCookie(session.context.cookies("https://www.zhihu.com"))) {
+                saveStorageState(session.context);
+                session.status = QrLoginStatus.SUCCESS;
+                session.message = "登录成功，cookies 已保存";
+                session.updatedAt = now;
+                safeClose(session);
+                return;
+            }
+
+            String pageHint = (String) session.page.evaluate(
+                    "() => (document.body && document.body.innerText) ? document.body.innerText : ''");
+            if (pageHint != null && (pageHint.contains("确认登录") || pageHint.contains("请在手机上确认"))) {
+                session.status = QrLoginStatus.SCANNED;
+                session.message = "已扫码，请在手机确认登录";
+            } else {
+                session.status = QrLoginStatus.WAITING;
+                session.message = "等待扫码";
+            }
+
+            if (session.qrImage == null || session.qrImage.isBlank()) {
+                session.qrImage = captureQrImage(session.page);
+                if (session.qrImage == null || session.qrImage.isBlank()) {
+                    session.qrImage = capturePageImage(session.page);
+                }
+            }
+            session.updatedAt = now;
+        } catch (Exception e) {
+            session.status = QrLoginStatus.FAILED;
+            session.message = "二维码状态检查失败: " + e.getMessage();
+            session.updatedAt = now;
+            safeClose(session);
+        }
+    }
+
+    private void switchToQrMode(Page page) {
+        try {
+            page.evaluate("() => {" +
+                    "const nodes = Array.from(document.querySelectorAll('button,a,div,span')); " +
+                    "const target = nodes.find(n => (n.innerText || '').includes('扫码登录')); " +
+                    "if (target) { target.click(); return true; } " +
+                    "return false;" +
+                    "}");
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String captureQrImage(Page page) {
+        try {
+            String data = (String) page.evaluate("() => {" +
+                    "const canvases = Array.from(document.querySelectorAll('canvas'));" +
+                    "for (const c of canvases) {" +
+                    "  if ((c.width || 0) >= 120 && (c.height || 0) >= 120) {" +
+                    "    try { return c.toDataURL('image/png'); } catch (e) {}" +
+                    "  }" +
+                    "}" +
+                    "const imgs = Array.from(document.querySelectorAll('img'));" +
+                    "for (const img of imgs) {" +
+                    "  const w = img.naturalWidth || img.width || 0;" +
+                    "  const h = img.naturalHeight || img.height || 0;" +
+                    "  if (w >= 120 && h >= 120 && img.src && img.src.startsWith('data:image/')) { return img.src; }" +
+                    "}" +
+                    "return null;" +
+                    "}");
+            if (data != null && data.startsWith("data:image/")) {
+                return data;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private String capturePageImage(Page page) {
+        try {
+            byte[] image = page.screenshot(new Page.ScreenshotOptions().setFullPage(true));
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(image);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private QrLoginSnapshot snapshotOf(QrLoginSession session) {
+        return new QrLoginSnapshot(
+                session.id,
+                session.status,
+                session.qrImage,
+                session.message,
+                session.createdAt,
+                session.updatedAt,
+                session.expiresAt
+        );
+    }
+
+    private void closeQrLoginSession(boolean clearSession) {
+        if (qrLoginSession == null) {
+            return;
+        }
+        safeClose(qrLoginSession);
+        if (clearSession) {
+            qrLoginSession = null;
+        }
+    }
+
+    private void safeClose(QrLoginSession session) {
+        if (session == null) {
+            return;
+        }
+        if (session.page != null) {
+            try {
+                session.page.close();
+            } catch (Exception ignored) {
+            }
+            session.page = null;
+        }
+        if (session.context != null) {
+            try {
+                session.context.close();
+            } catch (Exception ignored) {
+            }
+            session.context = null;
+        }
+    }
+
+    private void saveStorageState(BrowserContext context) throws IOException {
+        context.storageState(new BrowserContext.StorageStateOptions()
+                .setPath(java.nio.file.Path.of(COOKIES_FILE)));
+    }
+
+    private boolean hasValidLoginCookies() {
+        java.nio.file.Path path = java.nio.file.Path.of(COOKIES_FILE);
+        if (!java.nio.file.Files.exists(path)) {
+            return false;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(java.nio.file.Files.readString(path));
+            if (root == null) {
+                return false;
+            }
+            if (root.isObject() && root.has("cookies")) {
+                return hasLoginCookie(root.get("cookies"));
+            }
+            if (root.isArray()) {
+                return hasLoginCookie(root);
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private boolean hasLoginCookie(List<Cookie> cookies) {
+        if (cookies == null || cookies.isEmpty()) {
+            return false;
+        }
+        return cookies.stream().anyMatch(cookie -> "z_c0".equals(cookie.name) && cookie.value != null && !cookie.value.isBlank());
+    }
+
+    private boolean hasLoginCookie(JsonNode cookies) {
+        if (cookies == null || !cookies.isArray()) {
+            return false;
+        }
+        for (JsonNode cookie : cookies) {
+            String name = cookie.hasNonNull("name") ? cookie.get("name").asText() : "";
+            String value = cookie.hasNonNull("value") ? cookie.get("value").asText() : "";
+            if ("z_c0".equals(name) && !value.isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public List<ZhihuAnswer> crawlUserAnswers(String userId, int limit) {
         logger.info("开始使用浏览器抓取用户 {} 的回答，限制数量: {}", userId, limit);
         
@@ -852,15 +1145,61 @@ public class ZhihuBrowserCrawlerService {
         java.nio.file.Path cookiesPath = java.nio.file.Path.of(COOKIES_FILE);
         
         if (java.nio.file.Files.exists(cookiesPath)) {
+            try {
+                JsonNode root = objectMapper.readTree(java.nio.file.Files.readString(cookiesPath));
+                if (root != null && root.isObject()) {
+                    return browser.newContext(new Browser.NewContextOptions()
+                            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                            .setViewportSize(1920, 1080)
+                            .setStorageStatePath(cookiesPath));
+                }
+                if (root != null && root.isArray()) {
+                    BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+                            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                            .setViewportSize(1920, 1080));
+                    context.addCookies(convertCookieArray(root));
+                    return context;
+                }
+            } catch (Exception e) {
+                logger.warn("cookies 文件格式异常，回退为未登录上下文: {}", e.getMessage());
+            }
             return browser.newContext(new Browser.NewContextOptions()
                     .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                    .setViewportSize(1920, 1080)
-                    .setStorageStatePath(cookiesPath));
+                    .setViewportSize(1920, 1080));
         } else {
             return browser.newContext(new Browser.NewContextOptions()
                     .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                     .setViewportSize(1920, 1080));
         }
+    }
+
+    private List<Cookie> convertCookieArray(JsonNode root) {
+        List<Cookie> cookies = new ArrayList<>();
+        for (JsonNode node : root) {
+            if (!node.hasNonNull("name") || !node.hasNonNull("value")) {
+                continue;
+            }
+            Cookie cookie = new Cookie(node.get("name").asText(), node.get("value").asText());
+            if (node.hasNonNull("domain")) {
+                cookie.setDomain(node.get("domain").asText());
+            }
+            if (node.hasNonNull("path")) {
+                cookie.setPath(node.get("path").asText());
+            }
+            if (node.has("secure")) {
+                cookie.setSecure(node.get("secure").asBoolean(false));
+            }
+            if (node.has("httpOnly")) {
+                cookie.setHttpOnly(node.get("httpOnly").asBoolean(false));
+            }
+            if (node.has("expires")) {
+                cookie.setExpires(node.get("expires").asDouble());
+            } else if (node.has("expirationDate")) {
+                cookie.setExpires(node.get("expirationDate").asDouble());
+            }
+            cookies.add(cookie);
+        }
+        return cookies;
     }
     
     /**

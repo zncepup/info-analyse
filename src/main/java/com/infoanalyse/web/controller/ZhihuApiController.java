@@ -7,6 +7,7 @@ import com.infoanalyse.web.task.TaskService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -56,6 +57,32 @@ public class ZhihuApiController {
     @PostMapping("/save-cookies")
     public TaskInfo saveCookies() {
         return taskService.submit("save-cookies", "保存登录 cookies", Map.of(), zhihuCommand::saveCookies);
+    }
+
+    @PostMapping("/login/qr/session")
+    public QrLoginResponse startQrLogin() {
+        ZhihuBrowserCrawlerService.QrLoginSnapshot snapshot = crawlerService.startQrLoginSession();
+        return toQrResponse(snapshot);
+    }
+
+    @GetMapping("/login/qr/session/{sessionId}")
+    public QrLoginResponse getQrLogin(@PathVariable("sessionId") String sessionId) {
+        try {
+            ZhihuBrowserCrawlerService.QrLoginSnapshot snapshot = crawlerService.getQrLoginSession(sessionId);
+            return toQrResponse(snapshot);
+        } catch (RuntimeException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    @PostMapping("/login/qr/session/{sessionId}/cancel")
+    public ResponseEntity<Void> cancelQrLogin(@PathVariable("sessionId") String sessionId) {
+        try {
+            crawlerService.cancelQrLoginSession(sessionId);
+            return ResponseEntity.noContent().build();
+        } catch (RuntimeException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
     }
 
     @PostMapping("/user")
@@ -214,6 +241,18 @@ public class ZhihuApiController {
         }
     }
 
+    private QrLoginResponse toQrResponse(ZhihuBrowserCrawlerService.QrLoginSnapshot snapshot) {
+        return new QrLoginResponse(
+                snapshot.sessionId(),
+                snapshot.status().name(),
+                snapshot.qrImage(),
+                snapshot.message(),
+                snapshot.createdAt(),
+                snapshot.updatedAt(),
+                snapshot.expiresAt()
+        );
+    }
+
     public static class UserRequest {
         public String userId;
         public Integer limit;
@@ -249,5 +288,16 @@ public class ZhihuApiController {
 
     public static class ExportAllRequest {
         public String author;
+    }
+
+    public record QrLoginResponse(
+            String sessionId,
+            String status,
+            String qrImage,
+            String message,
+            long createdAt,
+            long updatedAt,
+            long expiresAt
+    ) {
     }
 }

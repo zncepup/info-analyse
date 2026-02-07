@@ -49,3 +49,4 @@ node_modules/
 output/
 zhihu_cookies.json
 debug_page.html
+app-run.err
