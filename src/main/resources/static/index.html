@@ -88,7 +88,7 @@
       display: grid; place-items: center; cursor: pointer;
       transition: background 0.15s;
     }
-    .nav-action:active { background: var(--fill-tertiary); transform: scale(0.9); }
+    .nav-action:active, .nav-action.tapped { background: var(--fill-tertiary); transform: scale(0.9); }
 
     /* ===== Section ===== */
     .section { margin-top: 24px; }
@@ -104,9 +104,7 @@
       border: none; background: none; color: var(--tint);
       font-size: 13px; font-weight: 400; cursor: pointer;
       padding: 4px 0;
-      transition: transform 0.1s, opacity 0.1s;
     }
-    .section-action:active { opacity: 0.4; transform: scale(0.93); }
 
     /* ===== Card (iOS Grouped) ===== */
     .card {
@@ -191,19 +189,27 @@
       border: none; border-radius: var(--cell-radius);
       font-family: inherit; font-size: 15px; font-weight: 600;
       cursor: pointer;
-      transition: transform 0.1s, opacity 0.1s;
+      transition: transform 0.15s cubic-bezier(0.2,0,0,1), opacity 0.15s, background 0.15s;
       -webkit-appearance: none;
     }
-    .ios-btn:active { transform: scale(0.93); opacity: 0.6; }
+    .ios-btn.tapped, .ios-btn:active { transform: scale(0.92); opacity: 0.55; }
     .ios-btn:disabled { opacity: 0.35; pointer-events: none; }
     .ios-btn-tint { background: var(--tint); color: #fff; }
     .ios-btn-plain { background: var(--fill-tertiary); color: var(--tint); }
     .ios-btn-ghost { background: transparent; color: var(--tint); height: auto; padding: 6px 12px; font-size: 13px; font-weight: 500; }
-    .ios-btn-ghost:active { background: var(--fill-quaternary); transform: scale(0.93); }
+    .ios-btn-ghost.tapped, .ios-btn-ghost:active { background: var(--fill-quaternary); transform: scale(0.92); }
     .ios-btn-danger { background: transparent; color: var(--red); height: auto; padding: 6px 12px; font-size: 13px; font-weight: 500; }
-    .ios-btn-danger:active { background: var(--red-bg); transform: scale(0.93); }
+    .ios-btn-danger.tapped, .ios-btn-danger:active { background: var(--red-bg); transform: scale(0.92); }
     .ios-btn-full { width: calc(100% - 32px); margin: 0 16px 16px; }
     .ios-btn-sm { height: 32px; padding: 0 14px; font-size: 13px; border-radius: 8px; }
+
+    /* Tap feedback for all interactive elements */
+    .section-action, .nav-action, .pager-btn, .tab-item, .disclosure-btn {
+      transition: transform 0.15s cubic-bezier(0.2,0,0,1), opacity 0.15s, background 0.15s;
+    }
+    .section-action.tapped, .nav-action.tapped, .pager-btn.tapped,
+    .disclosure-btn.tapped { transform: scale(0.9); opacity: 0.4; }
+    .tab-item.tapped { transform: scale(0.9); color: var(--tint); }
 
     /* ===== QR Zone ===== */
     .qr-zone { padding: 14px 16px; }
@@ -910,6 +916,30 @@ $('sync-form').addEventListener('submit', async (e) => {
 authorSelect.addEventListener('change', (e) => refreshFiles(e.target.value));
 
 const refreshAll = () => { refreshStatus(); refreshAuthors(); refreshTasks(); refreshOutputs(); };
+
+// Tap feedback — iOS Safari 不可靠触发 :active，用 JS 补偿
+const TAP_SEL = 'button, .ios-btn, .ios-btn-ghost, .ios-btn-danger, .ios-btn-sm, .section-action, .nav-action, .pager-btn, .tab-item, .disclosure-btn, [onclick]';
+document.addEventListener('touchstart', (e) => {
+  const el = e.target.closest(TAP_SEL);
+  if (el && !el.disabled) el.classList.add('tapped');
+}, {passive: true});
+document.addEventListener('touchend', () => {
+  document.querySelectorAll('.tapped').forEach(el => el.classList.remove('tapped'));
+}, {passive: true});
+document.addEventListener('touchcancel', () => {
+  document.querySelectorAll('.tapped').forEach(el => el.classList.remove('tapped'));
+}, {passive: true});
+// 桌面端也加 mousedown/mouseup 反馈
+document.addEventListener('mousedown', (e) => {
+  const el = e.target.closest(TAP_SEL);
+  if (el && !el.disabled) el.classList.add('tapped');
+});
+document.addEventListener('mouseup', () => {
+  document.querySelectorAll('.tapped').forEach(el => el.classList.remove('tapped'));
+});
+document.addEventListener('mouseleave', () => {
+  document.querySelectorAll('.tapped').forEach(el => el.classList.remove('tapped'));
+}, true);
 
 // Init
 refreshAll();
