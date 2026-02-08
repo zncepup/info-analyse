@@ -712,6 +712,9 @@ const populateSyncSelect = () => {
   });
   if (prev && [...syncUser.options].some(o => o.value === prev)) {
     syncUser.value = prev;
+  } else {
+    const dang = [...syncUser.options].find(o => o.value.toLowerCase().includes('dang'));
+    if (dang) syncUser.value = dang.value;
   }
 };
 
@@ -888,6 +891,7 @@ const refreshOutputs = async () => {
     if (!authors.length) { authorSelect.innerHTML = '<option value="">暂无作者</option>'; allFiles=[]; renderFilePage(); return; }
     authors.forEach(a => { const o = document.createElement('option'); o.value = a.name; o.textContent = a.name+' ('+a.mdCount+')'; authorSelect.appendChild(o); });
     if (prev && [...authorSelect.options].some(o => o.value === prev)) { authorSelect.value = prev; }
+    else { const dang = [...authorSelect.options].find(o => o.value.toLowerCase().includes('dang')); if (dang) authorSelect.value = dang.value; }
     refreshFiles(authorSelect.value);
   } catch(e) { showToast('加载失败'); }
 };
