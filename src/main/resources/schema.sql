@@ -148,6 +148,16 @@ CREATE TABLE IF NOT EXISTS crawl_task (
     INDEX idx_source_status (source, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='抓取任务记录';
 
+-- 知乎作者管理
+CREATE TABLE IF NOT EXISTS zhihu_author (
+    id              BIGINT          AUTO_INCREMENT PRIMARY KEY,
+    user_id         VARCHAR(100)    NOT NULL COMMENT '知乎用户ID(URL路径名)',
+    author_name     VARCHAR(200)    COMMENT '作者昵称',
+    profile_url     VARCHAR(500)    COMMENT '主页链接',
+    created_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '添加时间',
+    UNIQUE KEY uk_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知乎作者管理';
+
 -- AI分析结果
 CREATE TABLE IF NOT EXISTS ai_analysis (
     id              BIGINT          AUTO_INCREMENT PRIMARY KEY,

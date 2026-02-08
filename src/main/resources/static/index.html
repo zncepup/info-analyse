@@ -449,6 +449,24 @@
     </div>
   </section>
 
+  <!-- ===== Author Management ===== -->
+  <section class="section" id="author-section">
+    <div class="section-header">
+      <span>作者管理</span>
+      <button class="section-action" onclick="refreshAuthors()">刷新</button>
+    </div>
+    <div class="card">
+      <div class="form-group" style="padding:12px 16px 8px">
+        <label class="form-label">添加作者</label>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="author-url-input" placeholder="https://www.zhihu.com/people/xxx" style="flex:1">
+          <button class="ios-btn ios-btn-tint ios-btn-sm" onclick="addAuthor()" id="add-author-btn">添加</button>
+        </div>
+      </div>
+      <ul class="list" id="author-list"></ul>
+    </div>
+  </section>
+
   <!-- ===== Crawl Actions ===== -->
   <section class="section" id="crawl-section">
     <div class="section-header">数据抓取</div>
@@ -475,8 +493,10 @@
         <div class="card-label">同步用户动态</div>
         <form id="sync-form">
           <div class="form-group">
-            <label class="form-label" for="sync-user">用户 ID</label>
-            <input class="form-input" id="sync-user" name="userId" placeholder="例如 mr-dang-77" value="mr-dang-77" required>
+            <label class="form-label" for="sync-user">选择作者</label>
+            <select class="form-input" id="sync-user" name="userId" required>
+              <option value="">请先添加作者</option>
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label" for="sync-limit">同步数量</label>
@@ -526,6 +546,10 @@
 <!-- Tab Bar (mobile) -->
 <nav class="tab-bar" aria-label="主导航">
   <div class="tab-bar-inner">
+  <a class="tab-item" href="#author-section">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2"/></svg>
+    <span>作者</span>
+  </a>
   <a class="tab-item" href="#crawl-section">
     <svg class="tab-icon" viewBox="0 0 24 24" fill="none"><path d="M13.828 10.172a4 4 0 0 0-5.656 0l-4 4a4 4 0 1 0 5.656 5.656l1.102-1.101" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10.172 13.828a4 4 0 0 0 5.656 0l4-4a4 4 0 0 0-5.656-5.656l-1.1 1.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     <span>抓取</span>
@@ -556,9 +580,11 @@ const fileList = $('file-list');
 const pager = $('pager');
 const authorSelect = $('author-select');
 const syncUser = $('sync-user');
+const authorList = $('author-list');
 
 let qrSessionId = null, qrTimer = null;
 let allFiles = [], pageSize = 20, pageIdx = 0;
+let authorCache = []; // 缓存作者列表
 
 const showToast = (msg) => {
   toast.textContent = msg;
@@ -614,6 +640,75 @@ const pollQr = async () => {
     renderQr(p);
     if (['SUCCESS','EXPIRED','FAILED'].includes(p.status)) { clearInterval(qrTimer); qrTimer=null; if (p.status==='SUCCESS') refreshStatus(); }
   } catch(e) { clearInterval(qrTimer); qrTimer=null; qrSessionId=null; }
+};
+
+// Authors
+const refreshAuthors = async () => {
+  try {
+    authorCache = await fetchJson('/api/zhihu/authors');
+    renderAuthorList();
+    populateSyncSelect();
+  } catch(e) { showToast('作者加载失败'); }
+};
+
+const renderAuthorList = () => {
+  authorList.innerHTML = '';
+  if (!authorCache.length) {
+    authorList.innerHTML = '<li class="list-cell empty">暂无作者，请添加</li>';
+    return;
+  }
+  authorCache.forEach(a => {
+    const li = document.createElement('li');
+    li.className = 'list-cell';
+    li.innerHTML = '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:15px;font-weight:500">' + (a.authorName||a.userId) + '</div>'
+      + '<div style="font-size:13px;color:var(--label-tertiary)">' + a.userId + '</div>'
+      + '</div>'
+      + '<button class="ios-btn-danger ios-btn-sm" onclick="deleteAuthor('+a.id+',\''+a.authorName.replace(/'/g,"\\'")+'\')">删除</button>';
+    authorList.appendChild(li);
+  });
+};
+
+const populateSyncSelect = () => {
+  const prev = syncUser.value;
+  syncUser.innerHTML = '';
+  if (!authorCache.length) {
+    syncUser.innerHTML = '<option value="">请先添加作者</option>';
+    return;
+  }
+  authorCache.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.userId;
+    o.textContent = a.authorName || a.userId;
+    syncUser.appendChild(o);
+  });
+  if (prev && [...syncUser.options].some(o => o.value === prev)) {
+    syncUser.value = prev;
+  }
+};
+
+const addAuthor = async () => {
+  const input = $('author-url-input');
+  const url = input.value.trim();
+  if (!url) { showToast('请输入知乎主页链接'); return; }
+  const btn = $('add-author-btn');
+  btn.disabled = true;
+  try {
+    await postJson('/api/zhihu/authors', { url });
+    input.value = '';
+    showToast('添加成功');
+    refreshAuthors();
+  } catch(e) { showToast(e.message); }
+  finally { btn.disabled = false; }
+};
+
+const deleteAuthor = async (id, name) => {
+  if (!confirm('确定删除作者「' + name + '」？')) return;
+  try {
+    await fetchJson('/api/zhihu/authors/' + id, { method: 'DELETE' });
+    showToast('已删除');
+    refreshAuthors();
+  } catch(e) { showToast(e.message); }
 };
 
 // Tasks
@@ -769,8 +864,8 @@ $('fetch-form').addEventListener('submit', async (e) => {
 $('sync-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('button[type=submit]');
-  const userId = syncUser.value.trim();
-  if (!userId) { showToast('请输入用户ID'); return; }
+  const userId = syncUser.value;
+  if (!userId) { showToast('请先选择作者'); return; }
   btn.disabled = true;
   try { await postJson('/api/zhihu/sync', {userId, limit:Number($('sync-limit').value||3), withComments:$('sync-with-comments').checked}); showToast('任务已创建'); refreshTasks(); } catch(e) { showToast(e.message); }
   finally { btn.disabled = false; }
@@ -778,7 +873,7 @@ $('sync-form').addEventListener('submit', async (e) => {
 
 authorSelect.addEventListener('change', (e) => refreshFiles(e.target.value));
 
-const refreshAll = () => { refreshStatus(); refreshTasks(); refreshOutputs(); };
+const refreshAll = () => { refreshStatus(); refreshAuthors(); refreshTasks(); refreshOutputs(); };
 
 // Init
 refreshAll();

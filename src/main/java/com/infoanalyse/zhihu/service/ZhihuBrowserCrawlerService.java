@@ -190,6 +190,35 @@ public class ZhihuBrowserCrawlerService {
         }
         return qrLoginSession != null && qrLoginSession.status == QrLoginStatus.SUCCESS;
     }
+
+    /**
+     * 通过知乎 API 获取用户昵称
+     */
+    public String fetchAuthorName(String userId) {
+        initBrowser();
+        BrowserContext ctx = createContext();
+        Page page = ctx.newPage();
+        try {
+            // 先导航到知乎域名，确保 cookies 生效
+            page.navigate("https://www.zhihu.com/people/" + userId);
+            page.waitForTimeout(2000);
+            String apiUrl = "https://www.zhihu.com/api/v4/members/" + userId + "?include=name";
+            String json = (String) page.evaluate(
+                    "async (url) => { const r = await fetch(url, {credentials:'include'}); return await r.text(); }",
+                    apiUrl);
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(json);
+            if (root.has("name")) {
+                return root.get("name").asText();
+            }
+            return null;
+        } catch (Exception e) {
+            logger.warn("获取用户昵称失败: {}", e.getMessage());
+            return null;
+        } finally {
+            page.close();
+            ctx.close();
+        }
+    }
     
     /**
      * 抓取用户回答列表
