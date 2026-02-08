@@ -88,7 +88,7 @@
       display: grid; place-items: center; cursor: pointer;
       transition: background 0.15s;
     }
-    .nav-action:active { background: var(--fill-tertiary); }
+    .nav-action:active { background: var(--fill-tertiary); transform: scale(0.9); }
 
     /* ===== Section ===== */
     .section { margin-top: 24px; }
@@ -104,8 +104,9 @@
       border: none; background: none; color: var(--tint);
       font-size: 13px; font-weight: 400; cursor: pointer;
       padding: 4px 0;
+      transition: transform 0.1s, opacity 0.1s;
     }
-    .section-action:active { opacity: 0.5; }
+    .section-action:active { opacity: 0.4; transform: scale(0.93); }
 
     /* ===== Card (iOS Grouped) ===== */
     .card {
@@ -193,14 +194,14 @@
       transition: transform 0.1s, opacity 0.1s;
       -webkit-appearance: none;
     }
-    .ios-btn:active { transform: scale(0.97); opacity: 0.7; }
+    .ios-btn:active { transform: scale(0.93); opacity: 0.6; }
     .ios-btn:disabled { opacity: 0.35; pointer-events: none; }
     .ios-btn-tint { background: var(--tint); color: #fff; }
     .ios-btn-plain { background: var(--fill-tertiary); color: var(--tint); }
     .ios-btn-ghost { background: transparent; color: var(--tint); height: auto; padding: 6px 12px; font-size: 13px; font-weight: 500; }
-    .ios-btn-ghost:active { background: var(--fill-quaternary); }
+    .ios-btn-ghost:active { background: var(--fill-quaternary); transform: scale(0.93); }
     .ios-btn-danger { background: transparent; color: var(--red); height: auto; padding: 6px 12px; font-size: 13px; font-weight: 500; }
-    .ios-btn-danger:active { background: var(--red-bg); }
+    .ios-btn-danger:active { background: var(--red-bg); transform: scale(0.93); }
     .ios-btn-full { width: calc(100% - 32px); margin: 0 16px 16px; }
     .ios-btn-sm { height: 32px; padding: 0 14px; font-size: 13px; border-radius: 8px; }
 
@@ -453,9 +454,9 @@
   <section class="section" id="author-section">
     <div class="section-header">
       <span>作者管理</span>
-      <button class="section-action" onclick="refreshAuthors()">刷新</button>
+      <button class="section-action" onclick="toggleAuthorSection()">展开</button>
     </div>
-    <div class="card">
+    <div class="card" id="author-card" style="display:none">
       <div class="form-group" style="padding:12px 16px 8px">
         <label class="form-label">添加作者</label>
         <div style="display:flex;gap:8px">
@@ -651,6 +652,18 @@ const refreshAuthors = async () => {
   } catch(e) { showToast('作者加载失败'); }
 };
 
+const toggleAuthorSection = () => {
+  const card = $('author-card');
+  const btn = document.querySelector('#author-section .section-action');
+  if (card.style.display === 'none') {
+    card.style.display = '';
+    btn.textContent = '收起';
+  } else {
+    card.style.display = 'none';
+    btn.textContent = '展开';
+  }
+};
+
 const renderAuthorList = () => {
   authorList.innerHTML = '';
   if (!authorCache.length) {
@@ -662,9 +675,10 @@ const renderAuthorList = () => {
     li.className = 'list-cell';
     li.style.cssText = 'flex-direction:column;align-items:stretch;gap:8px';
     const checked = a.autoAnalyze ? 'checked' : '';
+    const profileUrl = a.profileUrl || ('https://www.zhihu.com/people/' + a.userId);
     li.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px">'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-size:15px;font-weight:500">' + (a.authorName||a.userId) + '</div>'
+      + '<a href="'+profileUrl+'" target="_blank" rel="noopener" style="font-size:15px;font-weight:500;color:var(--tint);text-decoration:none">' + (a.authorName||a.userId) + '</a>'
       + '<div style="font-size:13px;color:var(--label-tertiary)">' + a.userId + '</div>'
       + '</div>'
       + '<button class="ios-btn-danger ios-btn-sm" onclick="deleteAuthor('+a.id+',\''+a.authorName.replace(/'/g,"\\'")+'\')">删除</button>'
@@ -900,6 +914,13 @@ const refreshAll = () => { refreshStatus(); refreshAuthors(); refreshTasks(); re
 // Init
 refreshAll();
 setInterval(refreshTasks, 5000);
+// 默认滚动到内容区域
+requestAnimationFrame(() => {
+  setTimeout(() => {
+    const el = $('content-section');
+    if (el) el.scrollIntoView({behavior:'instant'});
+  }, 300);
+});
 </script>
 
 </body>
