@@ -271,7 +271,7 @@ public class MarkdownViewController {
                 html.append("<span class=\"comment-reply-to\"> → ").append(escape(replyTo)).append("</span>");
             }
             html.append("</div>");
-            html.append("<div class=\"comment-content\">").append(escape(stripHtml(c.getContent()))).append("</div>");
+            html.append("<div class=\"comment-content\">").append(sanitizeCommentHtml(c.getContent())).append("</div>");
             html.append("<div class=\"comment-meta\">");
             if (c.getCreatedTime() != null) html.append("<span>").append(c.getCreatedTime()).append("</span>");
             if (c.getLikeCount() != null && c.getLikeCount() > 0) html.append("<span>👍 ").append(c.getLikeCount()).append("</span>");
@@ -303,7 +303,7 @@ public class MarkdownViewController {
                     html.append("<span class=\"comment-reply-to\"> → ").append(escape(c.getReplyToUser())).append("</span>");
                 }
                 html.append("</div>");
-                html.append("<div class=\"comment-content\">").append(escape(stripHtml(c.getContent()))).append("</div>");
+                html.append("<div class=\"comment-content\">").append(sanitizeCommentHtml(c.getContent())).append("</div>");
                 html.append("<div class=\"comment-meta\">");
                 if (c.getPublishTime() != null) html.append("<span>").append(c.getPublishTime()).append("</span>");
                 if (c.getLikeCount() != null && c.getLikeCount() > 0) html.append("<span>👍 ").append(c.getLikeCount()).append("</span>");
@@ -494,7 +494,13 @@ public class MarkdownViewController {
                         }
                         .comment-content {
                           font-size: 15px; line-height: 1.55; color: var(--label);
-                          margin-bottom: 4px; white-space: pre-wrap; word-break: break-word;
+                          margin-bottom: 4px; word-break: break-word;
+                        }
+                        .comment-content a {
+                          color: var(--tint); text-decoration: none;
+                        }
+                        .comment-content a:active {
+                          opacity: 0.6;
                         }
                         .comment-meta {
                           display: flex; gap: 12px;
@@ -563,20 +569,50 @@ public class MarkdownViewController {
     }
 
     /**
-     * 将 HTML 内容转为纯文本：去除标签，转换常见实体
+     * 清理评论 HTML：保留 &lt;a&gt; 超链接，去除其余标签，转换换行
+     * 返回可直接嵌入页面的安全 HTML
      */
-    private String stripHtml(String html) {
+    private String sanitizeCommentHtml(String html) {
         if (html == null || html.isEmpty()) return "";
-        String text = html.replaceAll("(?i)<br\\s*/?>", "\n");
-        text = text.replaceAll("(?i)</p>", "\n");
-        text = text.replaceAll("<[^>]+>", "");
-        text = text.replace("&nbsp;", " ")
-                   .replace("&amp;", "&")
-                   .replace("&lt;", "<")
-                   .replace("&gt;", ">")
-                   .replace("&quot;", "\"")
-                   .replace("&#39;", "'");
-        text = text.replaceAll("\n{3,}", "\n\n").trim();
-        return text;
+        // 1. 提取并暂存 <a> 标签，用占位符替代
+        java.util.List<String> links = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?i)<a\\s+[^>]*href\\s*=\\s*\"([^\"]*)\"[^>]*>(.*?)</a>")
+                .matcher(html);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String href = m.group(1);
+            String text = m.group(2).replaceAll("<[^>]+>", ""); // 链接文字去内嵌标签
+            String safeLink = "<a href=\"" + escape(href) + "\" target=\"_blank\" rel=\"noopener\">"
+                    + escape(text) + "</a>";
+            links.add(safeLink);
+            m.appendReplacement(sb, "\u0000LINK" + (links.size() - 1) + "\u0000");
+        }
+        m.appendTail(sb);
+        String result = sb.toString();
+        // 2. <br> → 换行
+        result = result.replaceAll("(?i)<br\\s*/?>", "\n");
+        // 3. </p> → 换行
+        result = result.replaceAll("(?i)</p>", "\n");
+        // 4. 去除所有剩余标签
+        result = result.replaceAll("<[^>]+>", "");
+        // 5. 转换 HTML 实体
+        result = result.replace("&nbsp;", " ")
+                       .replace("&amp;", "&")
+                       .replace("&lt;", "<")
+                       .replace("&gt;", ">")
+                       .replace("&quot;", "\"")
+                       .replace("&#39;", "'");
+        // 6. 对纯文本部分做 escape 防 XSS
+        result = escape(result);
+        // 7. 换行转 <br>
+        result = result.replace("\n", "<br>");
+        // 8. 还原 <a> 链接
+        for (int i = 0; i < links.size(); i++) {
+            result = result.replace("\u0000LINK" + i + "\u0000", links.get(i));
+        }
+        // 9. 清理多余连续 <br>
+        result = result.replaceAll("(<br>){3,}", "<br><br>");
+        return result.trim();
     }
 }
