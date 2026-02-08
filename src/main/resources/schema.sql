@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS zhihu_comment (
     id                  BIGINT          AUTO_INCREMENT PRIMARY KEY,
     comment_id          BIGINT          NOT NULL COMMENT '知乎评论ID',
     target_id           BIGINT          NOT NULL COMMENT '所属回答/文章ID',
-    target_type         TINYINT         NOT NULL DEFAULT 1 COMMENT '目标类型: 1=回答 2=文章',
+    target_type         TINYINT         NOT NULL DEFAULT 1 COMMENT '目标类型: 1=回答 2=文章 3=想法',
     author_name         VARCHAR(100)    COMMENT '评论者昵称',
     author_id           VARCHAR(100)    COMMENT '评论者ID',
     content             TEXT            COMMENT '评论内容',

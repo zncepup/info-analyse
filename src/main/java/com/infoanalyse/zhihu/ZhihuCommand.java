@@ -3,6 +3,7 @@ package com.infoanalyse.zhihu;
 import com.infoanalyse.dao.mapper.AiAnalysisDOMapper;
 import com.infoanalyse.dao.mapper.ZhihuAnswerDOMapper;
 import com.infoanalyse.dao.mapper.ZhihuArticleDOMapper;
+import com.infoanalyse.dao.mapper.ZhihuCommentDOMapper;
 import com.infoanalyse.dao.mapper.GubaPostDOMapper;
 import com.infoanalyse.dao.mapper.ZhihuPinDOMapper;
 import com.infoanalyse.dao.model.*;
@@ -54,6 +55,9 @@ public class ZhihuCommand {
 
     @Autowired
     private ZhihuPinDOMapper pinMapper;
+
+    @Autowired
+    private ZhihuCommentDOMapper commentMapper;
 
     /**
      * 打开浏览器让用户登录知乎
@@ -249,7 +253,7 @@ public class ZhihuCommand {
             } else if ("article".equals(type)) {
                 return fetchArticle(id, save, withComments);
             } else if ("pin".equals(type)) {
-                return fetchPin(id, save);
+                return fetchPin(id, save, withComments);
             }
             
             return "不支持的链接类型";
@@ -354,7 +358,7 @@ public class ZhihuCommand {
         return "文章抓取成功！";
     }
 
-    private String fetchPin(String pinId, boolean save) {
+    private String fetchPin(String pinId, boolean save, boolean withComments) {
         System.out.println("正在抓取想法 " + pinId + "...");
         
         ZhihuPin pin = zhihuBrowserCrawlerService.crawlPinById(pinId);
@@ -370,6 +374,14 @@ public class ZhihuCommand {
             System.out.printf("内容预览: %s%n", preview);
         }
         System.out.println();
+
+        if (withComments && pin.getCommentCount() > 0 && pin.getAuthorId() != null) {
+            System.out.println("正在抓取作者参与的评论...");
+            List<ZhihuComment> comments = zhihuBrowserCrawlerService.crawlPinComments(
+                    pin.getId(), pin.getAuthorId());
+            pin.setComments(comments);
+            System.out.println("获取 " + comments.size() + " 条作者互动评论");
+        }
         
         if (save) {
             try {
@@ -611,11 +623,22 @@ public class ZhihuCommand {
                 try {
                     ZhihuPin pin = zhihuBrowserCrawlerService.crawlPinById(item.id);
                     if (taskInfo != null) taskInfo.phaseDone("爬取想法");
+
+                    if (withComments && pin.getCommentCount() > 0 && pin.getAuthorId() != null) {
+                        System.out.println("  抓取评论...");
+                        if (taskInfo != null) taskInfo.stepStart("抓取评论: " + item.title);
+                        List<ZhihuComment> comments = zhihuBrowserCrawlerService.crawlPinComments(
+                                pin.getId(), pin.getAuthorId());
+                        pin.setComments(comments);
+                        System.out.println("  获取 " + comments.size() + " 条作者互动评论");
+                        if (taskInfo != null) taskInfo.phaseDone("爬取评论");
+                    } else if (withComments && taskInfo != null) {
+                        taskInfo.phaseSkip("爬取评论");
+                    }
                     
                     zhihuDbSaveService.savePin(pin);
                     savedCount++;
                     System.out.println("  ✓ 已保存");
-                    if (withComments && taskInfo != null) taskInfo.phaseSkip("爬取评论");
                     
                     // 自动AI分析
                     if (autoAnalyze) {
@@ -704,6 +727,13 @@ public class ZhihuCommand {
                 if (list.isEmpty()) return "帖子不存在: " + targetId;
                 content = list.get(0).getContent();
                 title = list.get(0).getTitle();
+            } else if ("zhihu".equals(source) && "pin".equals(targetType)) {
+                ZhihuPinDOExample pEx = new ZhihuPinDOExample();
+                pEx.createCriteria().andPinIdEqualTo(targetId);
+                List<ZhihuPinDO> list = pinMapper.selectByExampleWithBLOBs(pEx);
+                if (list.isEmpty()) return "想法不存在: " + targetId;
+                content = list.get(0).getContent();
+                title = content != null && content.length() > 50 ? content.substring(0, 50) + "..." : "想法";
             } else {
                 return "不支持的来源/类型: " + source + "/" + targetType;
             }
@@ -815,6 +845,99 @@ public class ZhihuCommand {
         } catch (Exception e) {
             e.printStackTrace();
             return "导出失败: " + e.getMessage();
+        }
+    }
+
+    /**
+     * 重新爬取评论：删除旧评论后重新抓取
+     */
+    public String reCrawlComments(String source, Long targetId, String targetType) {
+        try {
+            if (!"zhihu".equals(source)) return "仅支持知乎内容重新爬取评论";
+
+            // 获取 authorId
+            String authorId = null;
+            String contentId = String.valueOf(targetId);
+            byte commentTargetType;
+            if ("answer".equals(targetType)) {
+                ZhihuAnswerDOExample ex = new ZhihuAnswerDOExample();
+                ex.createCriteria().andAnswerIdEqualTo(targetId);
+                List<ZhihuAnswerDO> list = answerMapper.selectByExample(ex);
+                if (list.isEmpty()) return "回答不存在: " + targetId;
+                authorId = list.get(0).getAuthorId();
+                commentTargetType = (byte) 1;
+            } else if ("article".equals(targetType)) {
+                ZhihuArticleDOExample ex = new ZhihuArticleDOExample();
+                ex.createCriteria().andArticleIdEqualTo(targetId);
+                List<ZhihuArticleDO> list = articleMapper.selectByExample(ex);
+                if (list.isEmpty()) return "文章不存在: " + targetId;
+                authorId = list.get(0).getAuthorId();
+                commentTargetType = (byte) 2;
+            } else if ("pin".equals(targetType)) {
+                ZhihuPinDOExample ex = new ZhihuPinDOExample();
+                ex.createCriteria().andPinIdEqualTo(targetId);
+                List<ZhihuPinDO> list = pinMapper.selectByExample(ex);
+                if (list.isEmpty()) return "想法不存在: " + targetId;
+                authorId = list.get(0).getAuthorId();
+                commentTargetType = (byte) 3;
+            } else {
+                return "不支持的类型: " + targetType;
+            }
+
+            if (authorId == null || authorId.isBlank()) {
+                return "无法获取作者ID，无法爬取评论";
+            }
+
+            // 删除旧评论
+            ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
+            cEx.createCriteria().andTargetIdEqualTo(targetId).andTargetTypeEqualTo(commentTargetType);
+            int deleted = commentMapper.deleteByExample(cEx);
+            System.out.println("已删除旧评论 " + deleted + " 条");
+
+            // 重新爬取
+            List<ZhihuComment> comments;
+            if ("answer".equals(targetType)) {
+                comments = zhihuBrowserCrawlerService.crawlAnswerComments(contentId, authorId);
+            } else if ("article".equals(targetType)) {
+                comments = zhihuBrowserCrawlerService.crawlArticleComments(contentId, authorId);
+            } else {
+                comments = zhihuBrowserCrawlerService.crawlPinComments(contentId, authorId);
+            }
+            System.out.println("重新爬取到 " + comments.size() + " 条评论");
+
+            // 保存
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            for (ZhihuComment c : comments) {
+                zhihuDbSaveService.saveCommentPublic(c, targetId, commentTargetType, now);
+            }
+            System.out.println("评论已保存到数据库");
+
+            return "重新爬取评论完成，共 " + comments.size() + " 条";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "重新爬取评论失败: " + e.getMessage();
+        }
+    }
+
+    /**
+     * 重新AI分析：删除旧分析结果后重新分析
+     */
+    public String reAnalyze(String source, Long targetId, String targetType) {
+        try {
+            // 删除旧的分析结果
+            AiAnalysisDOExample delEx = new AiAnalysisDOExample();
+            delEx.createCriteria()
+                    .andSourceEqualTo(source)
+                    .andTargetIdEqualTo(targetId)
+                    .andTargetTypeEqualTo(targetType);
+            int deleted = aiAnalysisMapper.deleteByExample(delEx);
+            System.out.println("已删除旧分析结果 " + deleted + " 条");
+
+            // 重新分析
+            return analyzeContentFromDb(source, targetId, targetType);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "重新分析失败: " + e.getMessage();
         }
     }
     

@@ -133,6 +133,7 @@ public class MarkdownViewController {
         StringBuilder extra = new StringBuilder();
         appendZhihuCommentsHtml(extra, answerId, (byte) 1);
         appendAiAnalysisHtml(extra, "zhihu", answerId, "answer");
+        appendActionBar(extra, "zhihu", answerId, "answer", true);
 
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
                 .body(wrapHtml(safe(answer.getQuestionTitle()), html + extra.toString()));
@@ -163,6 +164,7 @@ public class MarkdownViewController {
         StringBuilder extra = new StringBuilder();
         appendZhihuCommentsHtml(extra, articleId, (byte) 2);
         appendAiAnalysisHtml(extra, "zhihu", articleId, "article");
+        appendActionBar(extra, "zhihu", articleId, "article", true);
 
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
                 .body(wrapHtml(safe(article.getTitle()), html + extra.toString()));
@@ -197,6 +199,7 @@ public class MarkdownViewController {
         StringBuilder extra = new StringBuilder();
         appendGubaCommentsHtml(extra, postId);
         appendAiAnalysisHtml(extra, "guba", postId, "post");
+        appendActionBar(extra, "guba", postId, "post", false);
 
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
                 .body(wrapHtml(safe(post.getTitle()), html + extra.toString()));
@@ -227,7 +230,9 @@ public class MarkdownViewController {
         String html = renderMarkdown(md.toString());
 
         StringBuilder extra = new StringBuilder();
+        appendZhihuCommentsHtml(extra, pinId, (byte) 3);
         appendAiAnalysisHtml(extra, "zhihu", pinId, "pin");
+        appendActionBar(extra, "zhihu", pinId, "pin", true);
 
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
                 .body(wrapHtml(title, html + extra.toString()));
@@ -368,6 +373,22 @@ public class MarkdownViewController {
         }
     }
 
+    private void appendActionBar(StringBuilder html, String source, Long targetId, String targetType, boolean hasComments) {
+        html.append("<div class=\"action-bar\">");
+        if (hasComments) {
+            html.append("<button class=\"action-btn\" onclick=\"doAction(this,'/api/zhihu/re-crawl-comments',{source:'")
+                .append(source).append("',targetId:'").append(targetId).append("',targetType:'").append(targetType)
+                .append("'},'重爬评论')\">重爬评论</button>");
+        }
+        html.append("<button class=\"action-btn\" onclick=\"doAction(this,'/api/zhihu/re-analyze',{source:'")
+            .append(source).append("',targetId:'").append(targetId).append("',targetType:'").append(targetType)
+            .append("'},'重新分析')\">重新分析</button>");
+        html.append("<button class=\"action-btn action-btn-danger\" onclick=\"doDelete(this,'")
+            .append(source).append("','").append(targetType).append("','").append(targetId)
+            .append("')\">删除</button>");
+        html.append("</div>");
+    }
+
     private String renderMarkdown(String markdown) {
         Node document = parser.parse(markdown);
         return renderer.render(document);
@@ -506,6 +527,28 @@ public class MarkdownViewController {
                       .reader-card p, .reader-card li { font-size: 16px; }
                       .comment-replies { margin-left: 12px; padding-left: 10px; }
                     }
+                    .action-bar {
+                      margin-top: 20px; padding-top: 16px;
+                      border-top: 0.5px solid var(--separator);
+                      display: flex; gap: 10px; flex-wrap: wrap;
+                    }
+                    .action-btn {
+                      flex: 1; min-width: 80px;
+                      padding: 10px 0; border-radius: 10px; border: none;
+                      font-size: 15px; font-weight: 500; cursor: pointer;
+                      background: var(--tint); color: #fff;
+                      transition: opacity 0.3s;
+                    }
+                    .action-btn:active { opacity: 0.5; }
+                    .action-btn:disabled { opacity: 0.4; cursor: default; }
+                    .action-btn-danger { background: #FF3B30; }
+                    .action-toast {
+                      position: fixed; bottom: calc(24px + var(--safe-bottom)); left: 50%; transform: translateX(-50%);
+                      background: rgba(0,0,0,0.75); color: #fff; padding: 10px 20px;
+                      border-radius: 20px; font-size: 15px; z-index: 100;
+                      opacity: 0; transition: opacity 0.3s; pointer-events: none;
+                    }
+                    .action-toast.show { opacity: 1; }
                   </style>
                 </head>
                 <body>
@@ -525,6 +568,29 @@ public class MarkdownViewController {
         String footer = """
                     </div>
                   </main>
+                  <div id="actionToast" class="action-toast"></div>
+                  <script>
+                  function showActionToast(msg){
+                    var t=document.getElementById('actionToast');
+                    t.textContent=msg; t.classList.add('show');
+                    setTimeout(function(){t.classList.remove('show');},2000);
+                  }
+                  function doAction(btn,url,body,label){
+                    btn.disabled=true; btn.textContent=label+'...';
+                    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+                      .then(function(r){if(!r.ok) throw new Error('请求失败'); return r.json();})
+                      .then(function(){showActionToast(label+'任务已提交');})
+                      .catch(function(e){showActionToast(e.message);})
+                      .finally(function(){btn.disabled=false; btn.textContent=label;});
+                  }
+                  function doDelete(btn,source,type,id){
+                    if(!confirm('确定删除？关联的评论和AI分析结果也会一并删除。')) return;
+                    btn.disabled=true; btn.textContent='删除中...';
+                    fetch('/api/outputs/'+source+'/'+type+'/'+id,{method:'DELETE'})
+                      .then(function(r){if(!r.ok) throw new Error('删除失败'); showActionToast('已删除'); setTimeout(function(){location.href='/';},800);})
+                      .catch(function(e){showActionToast(e.message); btn.disabled=false; btn.textContent='删除';});
+                  }
+                  </script>
                 </body>
                 </html>
                 """;

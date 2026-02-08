@@ -2144,4 +2144,151 @@ public class ZhihuBrowserCrawlerService {
             context.close();
         }
     }
+
+    public List<ZhihuComment> crawlPinComments(String pinId, String authorId) {
+        System.out.println("[评论抓取] 开始抓取想法 " + pinId + " 的评论...");
+        logger.info("开始抓取想法 {} 的评论，筛选作者ID: {}", pinId, authorId);
+
+        final List<ZhihuComment> allComments = new ArrayList<>();
+        final Map<String, ZhihuComment> commentMap = new HashMap<>();
+        final List<String[]> pendingChildComments = new ArrayList<>();
+
+        initBrowser();
+        BrowserContext context = createContext();
+        Page page = context.newPage();
+
+        try {
+            String pinUrl = "https://www.zhihu.com/pin/" + pinId;
+            System.out.println("[评论抓取] 访问想法页面: " + pinUrl);
+            page.navigate(pinUrl);
+            page.waitForTimeout(2000);
+
+            System.out.println("[评论抓取] === 第一阶段：获取根评论 ===");
+
+            String nextUrl = String.format(
+                "https://www.zhihu.com/api/v4/comment_v5/pins/%s/root_comment?order_by=score&limit=20",
+                pinId
+            );
+
+            java.util.Random random = new java.util.Random();
+            int pageNum = 0;
+
+            while (nextUrl != null) {
+                pageNum++;
+                System.out.println("[评论抓取] 根评论第 " + pageNum + " 页...");
+
+                String responseJson = (String) page.evaluate(
+                    "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
+                    nextUrl
+                );
+
+                if (responseJson == null || responseJson.isEmpty()) break;
+
+                try {
+                    JsonNode root = objectMapper.readTree(responseJson);
+                    if (root.has("error")) {
+                        System.out.println("[评论抓取] API 错误: " + root.get("error"));
+                        break;
+                    }
+
+                    JsonNode dataArray = root.get("data");
+                    int newCount = 0;
+
+                    if (dataArray != null && dataArray.isArray()) {
+                        for (JsonNode commentNode : dataArray) {
+                            ZhihuComment comment = parseCommentV5(commentNode, pinId);
+                            if (comment != null && !commentMap.containsKey(comment.getId())) {
+                                commentMap.put(comment.getId(), comment);
+                                allComments.add(comment);
+                                newCount++;
+
+                                JsonNode childComments = commentNode.get("child_comments");
+                                int loadedChildCount = 0;
+                                if (childComments != null && childComments.isArray()) {
+                                    for (JsonNode childNode : childComments) {
+                                        ZhihuComment childComment = parseCommentV5(childNode, pinId);
+                                        if (childComment != null && !commentMap.containsKey(childComment.getId())) {
+                                            childComment.setParentCommentId(comment.getId());
+                                            commentMap.put(childComment.getId(), childComment);
+                                            allComments.add(childComment);
+                                            newCount++;
+                                            loadedChildCount++;
+                                        }
+                                    }
+                                }
+
+                                int totalChildCount = commentNode.has("child_comment_count")
+                                    ? commentNode.get("child_comment_count").asInt() : 0;
+                                if (totalChildCount > loadedChildCount) {
+                                    pendingChildComments.add(new String[]{
+                                        comment.getId(),
+                                        String.valueOf(totalChildCount),
+                                        String.valueOf(loadedChildCount)
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    System.out.println("[评论抓取]   新增 " + newCount + " 条，累计: " + allComments.size());
+
+                    JsonNode paging = root.get("paging");
+                    if (paging != null) {
+                        boolean isEnd = paging.has("is_end") && paging.get("is_end").asBoolean();
+                        if (isEnd) {
+                            System.out.println("[评论抓取] 根评论已全部获取");
+                            nextUrl = null;
+                        } else if (paging.has("next")) {
+                            nextUrl = paging.get("next").asText().replace("\\u0026", "&");
+                        } else {
+                            nextUrl = null;
+                        }
+                    } else {
+                        nextUrl = null;
+                    }
+
+                    if (nextUrl != null) {
+                        page.waitForTimeout(1000 + random.nextInt(1000));
+                    }
+
+                } catch (Exception e) {
+                    System.out.println("[评论抓取] 解析失败: " + e.getMessage());
+                    break;
+                }
+            }
+
+            if (!pendingChildComments.isEmpty()) {
+                System.out.println("[评论抓取] === 第二阶段：获取完整子评论 ===");
+                System.out.println("[评论抓取] 有 " + pendingChildComments.size() + " 条根评论需要获取更多子评论");
+
+                int processed = 0;
+                for (String[] pending : pendingChildComments) {
+                    String rootCommentId = pending[0];
+                    processed++;
+                    int totalChild = Integer.parseInt(pending[1]);
+                    int loadedChild = Integer.parseInt(pending[2]);
+                    System.out.println("[评论抓取] 获取子评论 " + processed + "/" + pendingChildComments.size()
+                        + " (已有" + loadedChild + "/" + totalChild + ")");
+
+                    fetchAllChildComments(page, rootCommentId, pinId, commentMap, allComments, random);
+                    page.waitForTimeout(800 + random.nextInt(700));
+                }
+            }
+
+            System.out.println("[评论抓取] 全部获取完成，共 " + allComments.size() + " 条评论");
+            System.out.println("[评论抓取] 筛选作者参与的评论...");
+            List<ZhihuComment> authorComments = filterAuthorCommentsWithHierarchy(allComments, authorId, commentMap);
+
+            System.out.println("[评论抓取] 完成! 共 " + allComments.size() + " 条评论，作者参与 " + authorComments.size() + " 条");
+            logger.info("想法评论抓取完成，共 {} 条，作者参与 {} 条", allComments.size(), authorComments.size());
+            return authorComments;
+
+        } catch (Exception e) {
+            System.out.println("[评论抓取] 错误: " + e.getMessage());
+            logger.error("抓取想法评论失败", e);
+            return new ArrayList<>();
+        } finally {
+            context.close();
+        }
+    }
 }

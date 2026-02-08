@@ -164,6 +164,14 @@ public class ZhihuDbSaveService {
             pinMapper.updateByPrimaryKeySelective(record);
             logger.info("更新知乎想法: pinId={}", pinId);
         }
+
+        // 保存评论
+        if (pin.getComments() != null) {
+            for (ZhihuComment comment : pin.getComments()) {
+                saveComment(comment, pinId, (byte) 3, now);
+            }
+            logger.info("保存 {} 条评论 (pinId={})", pin.getComments().size(), pinId);
+        }
     }
 
     /**
@@ -236,6 +244,10 @@ public class ZhihuDbSaveService {
             ids.add(a.getAnswerId());
         }
         return ids;
+    }
+
+    public void saveCommentPublic(ZhihuComment comment, Long targetId, byte targetType, LocalDateTime crawlTime) {
+        saveComment(comment, targetId, targetType, crawlTime);
     }
 
     private void saveComment(ZhihuComment comment, Long targetId, byte targetType, LocalDateTime crawlTime) {

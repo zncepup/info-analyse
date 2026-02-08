@@ -1,6 +1,7 @@
 package com.infoanalyse.zhihu.model;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 知乎想法实体
@@ -17,6 +18,7 @@ public class ZhihuPin {
     private String url;
     private LocalDateTime createdTime;
     private LocalDateTime updatedTime;
+    private List<ZhihuComment> comments;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -40,4 +42,6 @@ public class ZhihuPin {
     public void setCreatedTime(LocalDateTime createdTime) { this.createdTime = createdTime; }
     public LocalDateTime getUpdatedTime() { return updatedTime; }
     public void setUpdatedTime(LocalDateTime updatedTime) { this.updatedTime = updatedTime; }
+    public List<ZhihuComment> getComments() { return comments; }
+    public void setComments(List<ZhihuComment> comments) { this.comments = comments; }
 }

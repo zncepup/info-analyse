@@ -230,6 +230,10 @@ public class OutputController {
             ZhihuPinDOExample ex = new ZhihuPinDOExample();
             ex.createCriteria().andPinIdEqualTo(id);
             deleted = pinMapper.deleteByExample(ex);
+            // 删除关联评论 (target_type=3 for pin)
+            ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
+            cEx.createCriteria().andTargetIdEqualTo(id).andTargetTypeEqualTo((byte) 3);
+            commentMapper.deleteByExample(cEx);
         } else if ("guba".equals(source) && "post".equals(type)) {
             GubaPostDOExample ex = new GubaPostDOExample();
             ex.createCriteria().andPostIdEqualTo(id);

@@ -151,6 +151,28 @@ public class ZhihuApiController {
                 () -> zhihuCommand.analyzeContent(request.file));
     }
 
+    @PostMapping("/re-crawl-comments")
+    public TaskInfo reCrawlComments(@RequestBody TargetRequest request) {
+        require(request.source, "source is required");
+        require(request.targetType, "targetType is required");
+        require(request.targetId, "targetId is required");
+        Long targetId = Long.parseLong(request.targetId);
+        Map<String, Object> params = Map.of("source", request.source, "targetId", targetId, "targetType", request.targetType);
+        return taskService.submit("re-crawl-comments", "重新爬取评论", params,
+                () -> zhihuCommand.reCrawlComments(request.source, targetId, request.targetType));
+    }
+
+    @PostMapping("/re-analyze")
+    public TaskInfo reAnalyze(@RequestBody TargetRequest request) {
+        require(request.source, "source is required");
+        require(request.targetType, "targetType is required");
+        require(request.targetId, "targetId is required");
+        Long targetId = Long.parseLong(request.targetId);
+        Map<String, Object> params = Map.of("source", request.source, "targetId", targetId, "targetType", request.targetType);
+        return taskService.submit("re-analyze", "重新AI分析", params,
+                () -> zhihuCommand.reAnalyze(request.source, targetId, request.targetType));
+    }
+
     @PostMapping("/export-word")
     public TaskInfo exportWord(@RequestBody ExportRequest request) {
         require(request.file, "file is required");
@@ -199,6 +221,12 @@ public class ZhihuApiController {
 
     public static class AnalyzeRequest {
         public String file;
+    }
+
+    public static class TargetRequest {
+        public String source;
+        public String targetId;
+        public String targetType;
     }
 
     public static class ExportRequest {
