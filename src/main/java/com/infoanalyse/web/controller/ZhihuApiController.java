@@ -1,5 +1,7 @@
 package com.infoanalyse.web.controller;
 
+import com.infoanalyse.dao.mapper.ZhihuAuthorDOMapper;
+import com.infoanalyse.dao.model.ZhihuAuthorDO;
 import com.infoanalyse.zhihu.ZhihuCommand;
 import com.infoanalyse.zhihu.service.ZhihuBrowserCrawlerService;
 import com.infoanalyse.web.task.TaskInfo;
@@ -18,12 +20,15 @@ public class ZhihuApiController {
     private final TaskService taskService;
     private final ZhihuCommand zhihuCommand;
     private final ZhihuBrowserCrawlerService crawlerService;
+    private final ZhihuAuthorDOMapper authorMapper;
 
     public ZhihuApiController(TaskService taskService, ZhihuCommand zhihuCommand,
-                              ZhihuBrowserCrawlerService crawlerService) {
+                              ZhihuBrowserCrawlerService crawlerService,
+                              ZhihuAuthorDOMapper authorMapper) {
         this.taskService = taskService;
         this.zhihuCommand = zhihuCommand;
         this.crawlerService = crawlerService;
+        this.authorMapper = authorMapper;
     }
 
     @GetMapping("/status")
@@ -120,13 +125,22 @@ public class ZhihuApiController {
         int limit = request.limit == null ? 50 : request.limit;
         boolean withComments = request.withComments != null && request.withComments;
 
+        // 从作者设置读取 autoAnalyze
+        boolean autoAnalyze = true;
+        ZhihuAuthorDO author = authorMapper.selectByUserId(request.userId);
+        if (author != null && author.getAutoAnalyze() != null) {
+            autoAnalyze = author.getAutoAnalyze();
+        }
+
         Map<String, Object> params = new HashMap<>();
         params.put("userId", request.userId);
         params.put("limit", limit);
         params.put("withComments", withComments);
+        params.put("autoAnalyze", autoAnalyze);
 
+        final boolean finalAutoAnalyze = autoAnalyze;
         return taskService.submit("zhihu-sync", "同步用户动态", params,
-                (task) -> zhihuCommand.syncUserActivities(request.userId, limit, withComments, task));
+                (task) -> zhihuCommand.syncUserActivities(request.userId, limit, withComments, finalAutoAnalyze, task));
     }
 
     @PostMapping("/analyze")

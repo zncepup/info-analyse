@@ -40,8 +40,7 @@ public class ZhihuAuthorController {
         List<ZhihuAuthorDO> authors = authorMapper.selectAll();
         List<AuthorVO> result = new ArrayList<>();
         for (ZhihuAuthorDO a : authors) {
-            result.add(new AuthorVO(a.getId(), a.getUserId(), a.getAuthorName(),
-                    a.getProfileUrl(), a.getCreatedTime()));
+            result.add(toVO(a));
         }
         return result;
     }
@@ -76,10 +75,23 @@ public class ZhihuAuthorController {
         author.setUserId(userId);
         author.setAuthorName(name != null ? name : userId);
         author.setProfileUrl("https://www.zhihu.com/people/" + userId);
+        author.setAutoAnalyze(true);
         authorMapper.insert(author);
 
-        return new AuthorVO(author.getId(), author.getUserId(), author.getAuthorName(),
-                author.getProfileUrl(), author.getCreatedTime());
+        return toVO(author);
+    }
+
+    @PutMapping("/{id}/auto-analyze")
+    public AuthorVO toggleAutoAnalyze(@PathVariable("id") Long id, @RequestBody ToggleRequest req) {
+        ZhihuAuthorDO author = authorMapper.selectAll().stream()
+                .filter(a -> a.getId().equals(id)).findFirst().orElse(null);
+        if (author == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "作者不存在");
+        }
+        boolean value = req.autoAnalyze != null && req.autoAnalyze;
+        authorMapper.updateAutoAnalyze(id, value);
+        author.setAutoAnalyze(value);
+        return toVO(author);
     }
 
     @DeleteMapping("/{id}")
@@ -121,6 +133,16 @@ public class ZhihuAuthorController {
         public String url;
     }
 
+    public static class ToggleRequest {
+        public Boolean autoAnalyze;
+    }
+
+    private AuthorVO toVO(ZhihuAuthorDO a) {
+        return new AuthorVO(a.getId(), a.getUserId(), a.getAuthorName(),
+                a.getProfileUrl(), a.getAutoAnalyze() != null && a.getAutoAnalyze(),
+                a.getCreatedTime());
+    }
+
     public record AuthorVO(Long id, String userId, String authorName,
-                           String profileUrl, Date createdTime) {}
+                           String profileUrl, boolean autoAnalyze, Date createdTime) {}
 }

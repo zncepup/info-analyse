@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS zhihu_author (
     user_id         VARCHAR(100)    NOT NULL COMMENT '知乎用户ID(URL路径名)',
     author_name     VARCHAR(200)    COMMENT '作者昵称',
     profile_url     VARCHAR(500)    COMMENT '主页链接',
+    auto_analyze    TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '同步后自动AI分析: 0=关 1=开',
     created_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '添加时间',
     UNIQUE KEY uk_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知乎作者管理';

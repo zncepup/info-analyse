@@ -401,6 +401,10 @@ public class ZhihuCommand {
     }
 
     public String syncUserActivities(String userId, int limit, boolean withComments, com.infoanalyse.web.task.TaskInfo taskInfo) {
+        return syncUserActivities(userId, limit, withComments, true, taskInfo);
+    }
+
+    public String syncUserActivities(String userId, int limit, boolean withComments, boolean autoAnalyze, com.infoanalyse.web.task.TaskInfo taskInfo) {
         
         try {
             zhihuBrowserCrawlerService.setHeadless(true);
@@ -470,7 +474,7 @@ public class ZhihuCommand {
                 if (!newArticles.isEmpty()) taskInfo.phaseInit("爬取文章", newArticles.size());
                 if (!newPins.isEmpty()) taskInfo.phaseInit("爬取想法", newPins.size());
                 if (withComments) taskInfo.phaseInit("爬取评论", totalNew);
-                taskInfo.phaseInit("AI分析", totalNew);
+                if (autoAnalyze) taskInfo.phaseInit("AI分析", totalNew);
             }
             
             if (newAnswers.isEmpty() && newArticles.isEmpty() && newPins.isEmpty()) {
@@ -513,13 +517,15 @@ public class ZhihuCommand {
                     System.out.println("  ✓ 已保存");
                     
                     // 自动AI分析
-                    try {
-                        if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
-                        analyzeContentFromDb("zhihu", Long.parseLong(answer.getId()), "answer");
-                        if (taskInfo != null) taskInfo.phaseDone("AI分析");
-                    } catch (Exception ae) {
-                        System.out.println("  自动分析失败: " + ae.getMessage());
-                        if (taskInfo != null) taskInfo.phaseFail("AI分析");
+                    if (autoAnalyze) {
+                        try {
+                            if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
+                            analyzeContentFromDb("zhihu", Long.parseLong(answer.getId()), "answer");
+                            if (taskInfo != null) taskInfo.phaseDone("AI分析");
+                        } catch (Exception ae) {
+                            System.out.println("  自动分析失败: " + ae.getMessage());
+                            if (taskInfo != null) taskInfo.phaseFail("AI分析");
+                        }
                     }
                     if (taskInfo != null) taskInfo.stepDone("✓ 回答: " + item.title);
                     
@@ -528,7 +534,7 @@ public class ZhihuCommand {
                     if (taskInfo != null) {
                         taskInfo.phaseFail("爬取回答");
                         if (withComments) taskInfo.phaseSkip("爬取评论");
-                        taskInfo.phaseSkip("AI分析");
+                        if (autoAnalyze) taskInfo.phaseSkip("AI分析");
                         taskInfo.stepDone("✗ 回答失败: " + item.title);
                     }
                 }
@@ -567,13 +573,15 @@ public class ZhihuCommand {
                     System.out.println("  ✓ 已保存");
                     
                     // 自动AI分析
-                    try {
-                        if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
-                        analyzeContentFromDb("zhihu", Long.parseLong(article.getId()), "article");
-                        if (taskInfo != null) taskInfo.phaseDone("AI分析");
-                    } catch (Exception ae) {
-                        System.out.println("  自动分析失败: " + ae.getMessage());
-                        if (taskInfo != null) taskInfo.phaseFail("AI分析");
+                    if (autoAnalyze) {
+                        try {
+                            if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
+                            analyzeContentFromDb("zhihu", Long.parseLong(article.getId()), "article");
+                            if (taskInfo != null) taskInfo.phaseDone("AI分析");
+                        } catch (Exception ae) {
+                            System.out.println("  自动分析失败: " + ae.getMessage());
+                            if (taskInfo != null) taskInfo.phaseFail("AI分析");
+                        }
                     }
                     if (taskInfo != null) taskInfo.stepDone("✓ 文章: " + item.title);
                     
@@ -582,7 +590,7 @@ public class ZhihuCommand {
                     if (taskInfo != null) {
                         taskInfo.phaseFail("爬取文章");
                         if (withComments) taskInfo.phaseSkip("爬取评论");
-                        taskInfo.phaseSkip("AI分析");
+                        if (autoAnalyze) taskInfo.phaseSkip("AI分析");
                         taskInfo.stepDone("✗ 文章失败: " + item.title);
                     }
                 }
@@ -610,13 +618,15 @@ public class ZhihuCommand {
                     if (withComments && taskInfo != null) taskInfo.phaseSkip("爬取评论");
                     
                     // 自动AI分析
-                    try {
-                        if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
-                        analyzeContentFromDb("zhihu", Long.parseLong(pin.getId()), "pin");
-                        if (taskInfo != null) taskInfo.phaseDone("AI分析");
-                    } catch (Exception ae) {
-                        System.out.println("  自动分析失败: " + ae.getMessage());
-                        if (taskInfo != null) taskInfo.phaseFail("AI分析");
+                    if (autoAnalyze) {
+                        try {
+                            if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
+                            analyzeContentFromDb("zhihu", Long.parseLong(pin.getId()), "pin");
+                            if (taskInfo != null) taskInfo.phaseDone("AI分析");
+                        } catch (Exception ae) {
+                            System.out.println("  自动分析失败: " + ae.getMessage());
+                            if (taskInfo != null) taskInfo.phaseFail("AI分析");
+                        }
                     }
                     if (taskInfo != null) taskInfo.stepDone("✓ 想法: " + item.title);
                 } catch (Exception e) {
@@ -624,7 +634,7 @@ public class ZhihuCommand {
                     if (taskInfo != null) {
                         taskInfo.phaseFail("爬取想法");
                         if (withComments) taskInfo.phaseSkip("爬取评论");
-                        taskInfo.phaseSkip("AI分析");
+                        if (autoAnalyze) taskInfo.phaseSkip("AI分析");
                         taskInfo.stepDone("✗ 想法失败: " + item.title);
                     }
                 }

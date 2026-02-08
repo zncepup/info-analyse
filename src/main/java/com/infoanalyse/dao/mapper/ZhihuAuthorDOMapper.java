@@ -14,6 +14,7 @@ public interface ZhihuAuthorDOMapper {
         @Result(property = "userId", column = "user_id"),
         @Result(property = "authorName", column = "author_name"),
         @Result(property = "profileUrl", column = "profile_url"),
+        @Result(property = "autoAnalyze", column = "auto_analyze"),
         @Result(property = "createdTime", column = "created_time")
     })
     List<ZhihuAuthorDO> selectAll();
@@ -22,12 +23,15 @@ public interface ZhihuAuthorDOMapper {
     @ResultMap("authorResult")
     ZhihuAuthorDO selectByUserId(@Param("userId") String userId);
 
-    @Insert("INSERT INTO zhihu_author (user_id, author_name, profile_url) VALUES (#{userId}, #{authorName}, #{profileUrl})")
+    @Insert("INSERT INTO zhihu_author (user_id, author_name, profile_url, auto_analyze) VALUES (#{userId}, #{authorName}, #{profileUrl}, #{autoAnalyze})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(ZhihuAuthorDO record);
 
     @Update("UPDATE zhihu_author SET author_name = #{authorName} WHERE id = #{id}")
     int updateName(ZhihuAuthorDO record);
+
+    @Update("UPDATE zhihu_author SET auto_analyze = #{autoAnalyze} WHERE id = #{id}")
+    int updateAutoAnalyze(@Param("id") Long id, @Param("autoAnalyze") Boolean autoAnalyze);
 
     @Delete("DELETE FROM zhihu_author WHERE id = #{id}")
     int deleteById(@Param("id") Long id);

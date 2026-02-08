@@ -660,11 +660,19 @@ const renderAuthorList = () => {
   authorCache.forEach(a => {
     const li = document.createElement('li');
     li.className = 'list-cell';
-    li.innerHTML = '<div style="flex:1;min-width:0">'
+    li.style.cssText = 'flex-direction:column;align-items:stretch;gap:8px';
+    const checked = a.autoAnalyze ? 'checked' : '';
+    li.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px">'
+      + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:15px;font-weight:500">' + (a.authorName||a.userId) + '</div>'
       + '<div style="font-size:13px;color:var(--label-tertiary)">' + a.userId + '</div>'
       + '</div>'
-      + '<button class="ios-btn-danger ios-btn-sm" onclick="deleteAuthor('+a.id+',\''+a.authorName.replace(/'/g,"\\'")+'\')">删除</button>';
+      + '<button class="ios-btn-danger ios-btn-sm" onclick="deleteAuthor('+a.id+',\''+a.authorName.replace(/'/g,"\\'")+'\')">删除</button>'
+      + '</div>'
+      + '<div class="toggle-cell" style="padding:0">'
+      + '<span style="font-size:13px;color:var(--label-secondary)">同步后自动AI分析</span>'
+      + '<label class="ios-switch"><input type="checkbox" '+checked+' onchange="toggleAutoAnalyze('+a.id+',this.checked)"><span class="switch-track"></span></label>'
+      + '</div>';
     authorList.appendChild(li);
   });
 };
@@ -709,6 +717,20 @@ const deleteAuthor = async (id, name) => {
     showToast('已删除');
     refreshAuthors();
   } catch(e) { showToast(e.message); }
+};
+
+const toggleAutoAnalyze = async (id, value) => {
+  try {
+    await fetchJson('/api/zhihu/authors/' + id + '/auto-analyze', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({autoAnalyze: value})
+    });
+    // 更新缓存
+    const a = authorCache.find(x => x.id === id);
+    if (a) a.autoAnalyze = value;
+    showToast(value ? 'AI分析已开启' : 'AI分析已关闭');
+  } catch(e) { showToast(e.message); refreshAuthors(); }
 };
 
 // Tasks

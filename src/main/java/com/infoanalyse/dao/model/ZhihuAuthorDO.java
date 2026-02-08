@@ -7,6 +7,7 @@ public class ZhihuAuthorDO {
     private String userId;
     private String authorName;
     private String profileUrl;
+    private Boolean autoAnalyze;
     private Date createdTime;
 
     public Long getId() { return id; }
@@ -17,6 +18,8 @@ public class ZhihuAuthorDO {
     public void setAuthorName(String authorName) { this.authorName = authorName; }
     public String getProfileUrl() { return profileUrl; }
     public void setProfileUrl(String profileUrl) { this.profileUrl = profileUrl; }
+    public Boolean getAutoAnalyze() { return autoAnalyze; }
+    public void setAutoAnalyze(Boolean autoAnalyze) { this.autoAnalyze = autoAnalyze; }
     public Date getCreatedTime() { return createdTime; }
     public void setCreatedTime(Date createdTime) { this.createdTime = createdTime; }
 }
