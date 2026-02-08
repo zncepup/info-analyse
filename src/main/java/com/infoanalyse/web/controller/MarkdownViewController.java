@@ -53,131 +53,139 @@ public class MarkdownViewController {
      * 查看知乎回答
      */
     @GetMapping(value = "/view/zhihu/answer/{answerId}", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> viewAnswer(@PathVariable("answerId") Long answerId) {
-        ZhihuAnswerDOExample example = new ZhihuAnswerDOExample();
-        example.createCriteria().andAnswerIdEqualTo(answerId);
-        List<ZhihuAnswerDO> list = answerMapper.selectByExampleWithBLOBs(example);
-        if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "回答不存在");
+        public ResponseEntity<String> viewAnswer(@PathVariable("answerId") Long answerId) {
+            ZhihuAnswerDOExample example = new ZhihuAnswerDOExample();
+            example.createCriteria().andAnswerIdEqualTo(answerId);
+            List<ZhihuAnswerDO> list = answerMapper.selectByExampleWithBLOBs(example);
+            if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "回答不存在");
 
-        ZhihuAnswerDO answer = list.get(0);
-        StringBuilder md = new StringBuilder();
-        md.append("# ").append(safe(answer.getQuestionTitle())).append("\n\n");
-        md.append("---\n");
-        md.append("- **作者**: ").append(safe(answer.getAuthorName())).append("\n");
-        md.append("- **点赞**: ").append(answer.getVoteupCount()).append("\n");
-        md.append("- **评论**: ").append(answer.getCommentCount()).append("\n");
-        if (answer.getUrl() != null) md.append("- **原文链接**: [链接](").append(answer.getUrl()).append(")\n");
-        if (answer.getCreatedTime() != null) md.append("- **创建时间**: ").append(answer.getCreatedTime()).append("\n");
-        md.append("---\n\n");
-        md.append(safe(answer.getContent())).append("\n\n");
+            ZhihuAnswerDO answer = list.get(0);
+            StringBuilder md = new StringBuilder();
+            md.append("# ").append(safe(answer.getQuestionTitle())).append("\n\n");
+            md.append("---\n");
+            md.append("- **作者**: ").append(safe(answer.getAuthorName())).append("\n");
+            md.append("- **点赞**: ").append(answer.getVoteupCount()).append("\n");
+            md.append("- **评论**: ").append(answer.getCommentCount()).append("\n");
+            if (answer.getUrl() != null) md.append("- **原文链接**: [链接](").append(answer.getUrl()).append(")\n");
+            if (answer.getCreatedTime() != null) md.append("- **创建时间**: ").append(answer.getCreatedTime()).append("\n");
+            md.append("---\n\n");
+            md.append(safe(answer.getContent())).append("\n\n");
 
-        // 评论
-        appendZhihuComments(md, answerId, (byte) 1);
+            String html = renderMarkdown(md.toString());
+            html = adjustImagePaths(html, safe(answer.getAuthorName()));
 
-        // AI 分析
-        appendAiAnalysis(md, "zhihu", answerId, "answer");
+            // Append interactive HTML sections
+            StringBuilder extra = new StringBuilder();
+            appendZhihuCommentsHtml(extra, answerId, (byte) 1);
+            appendAiAnalysisHtml(extra, "zhihu", answerId, "answer");
 
-        String html = renderMarkdown(md.toString());
-        html = adjustImagePaths(html, safe(answer.getAuthorName()));
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(safe(answer.getQuestionTitle()), html));
-    }
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+                    .body(wrapHtml(safe(answer.getQuestionTitle()), html + extra.toString()));
+        }
 
     /**
      * 查看知乎文章
      */
     @GetMapping(value = "/view/zhihu/article/{articleId}", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> viewArticle(@PathVariable("articleId") Long articleId) {
-        ZhihuArticleDOExample example = new ZhihuArticleDOExample();
-        example.createCriteria().andArticleIdEqualTo(articleId);
-        List<ZhihuArticleDO> list = articleMapper.selectByExampleWithBLOBs(example);
-        if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "文章不存在");
+        public ResponseEntity<String> viewArticle(@PathVariable("articleId") Long articleId) {
+            ZhihuArticleDOExample example = new ZhihuArticleDOExample();
+            example.createCriteria().andArticleIdEqualTo(articleId);
+            List<ZhihuArticleDO> list = articleMapper.selectByExampleWithBLOBs(example);
+            if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "文章不存在");
 
-        ZhihuArticleDO article = list.get(0);
-        StringBuilder md = new StringBuilder();
-        md.append("# ").append(safe(article.getTitle())).append("\n\n");
-        md.append("---\n");
-        md.append("- **作者**: ").append(safe(article.getAuthorName())).append("\n");
-        md.append("- **点赞**: ").append(article.getVoteupCount()).append("\n");
-        md.append("- **评论**: ").append(article.getCommentCount()).append("\n");
-        if (article.getUrl() != null) md.append("- **原文链接**: [链接](").append(article.getUrl()).append(")\n");
-        if (article.getCreatedTime() != null) md.append("- **创建时间**: ").append(article.getCreatedTime()).append("\n");
-        md.append("---\n\n");
-        md.append(safe(article.getContent())).append("\n\n");
+            ZhihuArticleDO article = list.get(0);
+            StringBuilder md = new StringBuilder();
+            md.append("# ").append(safe(article.getTitle())).append("\n\n");
+            md.append("---\n");
+            md.append("- **作者**: ").append(safe(article.getAuthorName())).append("\n");
+            md.append("- **点赞**: ").append(article.getVoteupCount()).append("\n");
+            md.append("- **评论**: ").append(article.getCommentCount()).append("\n");
+            if (article.getUrl() != null) md.append("- **原文链接**: [链接](").append(article.getUrl()).append(")\n");
+            if (article.getCreatedTime() != null) md.append("- **创建时间**: ").append(article.getCreatedTime()).append("\n");
+            md.append("---\n\n");
+            md.append(safe(article.getContent())).append("\n\n");
 
-        appendZhihuComments(md, articleId, (byte) 2);
-        appendAiAnalysis(md, "zhihu", articleId, "article");
+            String html = renderMarkdown(md.toString());
+            html = adjustImagePaths(html, safe(article.getAuthorName()));
 
-        String html = renderMarkdown(md.toString());
-        html = adjustImagePaths(html, safe(article.getAuthorName()));
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(safe(article.getTitle()), html));
-    }
+            StringBuilder extra = new StringBuilder();
+            appendZhihuCommentsHtml(extra, articleId, (byte) 2);
+            appendAiAnalysisHtml(extra, "zhihu", articleId, "article");
+
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+                    .body(wrapHtml(safe(article.getTitle()), html + extra.toString()));
+        }
 
     /**
      * 查看股吧帖子
      */
     @GetMapping(value = "/view/guba/post/{postId}", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> viewGubaPost(@PathVariable("postId") Long postId) {
-        GubaPostDOExample example = new GubaPostDOExample();
-        example.createCriteria().andPostIdEqualTo(postId);
-        List<GubaPostDO> list = gubaPostMapper.selectByExampleWithBLOBs(example);
-        if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "帖子不存在");
+        public ResponseEntity<String> viewGubaPost(@PathVariable("postId") Long postId) {
+            GubaPostDOExample example = new GubaPostDOExample();
+            example.createCriteria().andPostIdEqualTo(postId);
+            List<GubaPostDO> list = gubaPostMapper.selectByExampleWithBLOBs(example);
+            if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "帖子不存在");
 
-        GubaPostDO post = list.get(0);
-        StringBuilder md = new StringBuilder();
-        md.append("# ").append(safe(post.getTitle())).append("\n\n");
-        md.append("---\n");
-        md.append("- **作者**: ").append(safe(post.getAuthorName())).append("\n");
-        if (post.getStockName() != null) md.append("- **股票**: ").append(post.getStockName()).append("(").append(post.getStockCode()).append(")\n");
-        md.append("- **阅读**: ").append(post.getReadCount()).append("\n");
-        md.append("- **评论**: ").append(post.getCommentCount()).append("\n");
-        md.append("- **点赞**: ").append(post.getLikeCount()).append("\n");
-        if (post.getUrl() != null) md.append("- **原文链接**: [链接](").append(post.getUrl()).append(")\n");
-        if (post.getPublishTime() != null) md.append("- **发布时间**: ").append(post.getPublishTime()).append("\n");
-        md.append("---\n\n");
-        md.append(safe(post.getContent())).append("\n\n");
+            GubaPostDO post = list.get(0);
+            StringBuilder md = new StringBuilder();
+            md.append("# ").append(safe(post.getTitle())).append("\n\n");
+            md.append("---\n");
+            md.append("- **作者**: ").append(safe(post.getAuthorName())).append("\n");
+            if (post.getStockName() != null) md.append("- **股票**: ").append(post.getStockName()).append("(").append(post.getStockCode()).append(")\n");
+            md.append("- **阅读**: ").append(post.getReadCount()).append("\n");
+            md.append("- **评论**: ").append(post.getCommentCount()).append("\n");
+            md.append("- **点赞**: ").append(post.getLikeCount()).append("\n");
+            if (post.getUrl() != null) md.append("- **原文链接**: [链接](").append(post.getUrl()).append(")\n");
+            if (post.getPublishTime() != null) md.append("- **发布时间**: ").append(post.getPublishTime()).append("\n");
+            md.append("---\n\n");
+            md.append(safe(post.getContent())).append("\n\n");
 
-        // 股吧评论
-        appendGubaComments(md, postId);
-        appendAiAnalysis(md, "guba", postId, "post");
+            String html = renderMarkdown(md.toString());
+            String gubaDir = "guba_" + safe(post.getStockCode());
+            if (post.getStockName() != null) gubaDir += "_" + post.getStockName();
+            html = adjustImagePaths(html, gubaDir);
 
-        String html = renderMarkdown(md.toString());
-        // 股吧图片目录: output/guba_{stockCode}_{stockName}/images/
-        String gubaDir = "guba_" + safe(post.getStockCode());
-        if (post.getStockName() != null) gubaDir += "_" + post.getStockName();
-        html = adjustImagePaths(html, gubaDir);
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(safe(post.getTitle()), html));
-    }
+            StringBuilder extra = new StringBuilder();
+            appendGubaCommentsHtml(extra, postId);
+            appendAiAnalysisHtml(extra, "guba", postId, "post");
+
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+                    .body(wrapHtml(safe(post.getTitle()), html + extra.toString()));
+        }
 
     /**
      * 查看知乎想法
      */
     @GetMapping(value = "/view/zhihu/pin/{pinId}", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> viewPin(@PathVariable("pinId") Long pinId) {
-        ZhihuPinDOExample example = new ZhihuPinDOExample();
-        example.createCriteria().andPinIdEqualTo(pinId);
-        List<ZhihuPinDO> list = pinMapper.selectByExampleWithBLOBs(example);
-        if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "想法不存在");
+        public ResponseEntity<String> viewPin(@PathVariable("pinId") Long pinId) {
+            ZhihuPinDOExample example = new ZhihuPinDOExample();
+            example.createCriteria().andPinIdEqualTo(pinId);
+            List<ZhihuPinDO> list = pinMapper.selectByExampleWithBLOBs(example);
+            if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "想法不存在");
 
-        ZhihuPinDO pin = list.get(0);
-        String title = pin.getContent() != null && pin.getContent().length() > 50
-                ? pin.getContent().substring(0, 50) + "..." : "想法";
-        StringBuilder md = new StringBuilder();
-        md.append("# 想法\n\n");
-        md.append("---\n");
-        md.append("- **作者**: ").append(safe(pin.getAuthorName())).append("\n");
-        md.append("- **点赞**: ").append(pin.getLikeCount()).append("\n");
-        md.append("- **评论**: ").append(pin.getCommentCount()).append("\n");
-        md.append("- **转发**: ").append(pin.getRepinCount()).append("\n");
-        if (pin.getUrl() != null) md.append("- **原文链接**: [链接](").append(pin.getUrl()).append(")\n");
-        if (pin.getCreatedTime() != null) md.append("- **创建时间**: ").append(pin.getCreatedTime()).append("\n");
-        md.append("---\n\n");
-        md.append(safe(pin.getContent())).append("\n\n");
+            ZhihuPinDO pin = list.get(0);
+            String title = pin.getContent() != null && pin.getContent().length() > 50
+                    ? pin.getContent().substring(0, 50) + "..." : "想法";
+            StringBuilder md = new StringBuilder();
+            md.append("# 想法\n\n");
+            md.append("---\n");
+            md.append("- **作者**: ").append(safe(pin.getAuthorName())).append("\n");
+            md.append("- **点赞**: ").append(pin.getLikeCount()).append("\n");
+            md.append("- **评论**: ").append(pin.getCommentCount()).append("\n");
+            md.append("- **转发**: ").append(pin.getRepinCount()).append("\n");
+            if (pin.getUrl() != null) md.append("- **原文链接**: [链接](").append(pin.getUrl()).append(")\n");
+            if (pin.getCreatedTime() != null) md.append("- **创建时间**: ").append(pin.getCreatedTime()).append("\n");
+            md.append("---\n\n");
+            md.append(safe(pin.getContent())).append("\n\n");
 
-        appendAiAnalysis(md, "zhihu", pinId, "pin");
+            String html = renderMarkdown(md.toString());
 
-        String html = renderMarkdown(md.toString());
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(title, html));
-    }
+            StringBuilder extra = new StringBuilder();
+            appendAiAnalysisHtml(extra, "zhihu", pinId, "pin");
+
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+                    .body(wrapHtml(title, html + extra.toString()));
+        }
 
     // ========== 旧路由兼容: /view/{author}/{file} ==========
 
@@ -199,23 +207,23 @@ public class MarkdownViewController {
         throw new ResponseStatusException(NOT_FOUND, "内容不存在");
     }
 
-    // ========== 辅助方法 ==========
 
-    private void appendZhihuComments(StringBuilder md, Long targetId, byte targetType) {
-        ZhihuCommentDOExample cExample = new ZhihuCommentDOExample();
-        cExample.createCriteria().andTargetIdEqualTo(targetId).andTargetTypeEqualTo(targetType);
-        cExample.setOrderByClause("created_time ASC");
-        List<ZhihuCommentDO> comments = commentMapper.selectByExampleWithBLOBs(cExample);
-        if (!comments.isEmpty()) {
-            md.append("## 作者互动评论\n\n");
 
-            // Build a map for lookup by commentId
+
+    /**
+         * 输出知乎评论为可折叠 HTML
+         */
+        private void appendZhihuCommentsHtml(StringBuilder html, Long targetId, byte targetType) {
+            ZhihuCommentDOExample cExample = new ZhihuCommentDOExample();
+            cExample.createCriteria().andTargetIdEqualTo(targetId).andTargetTypeEqualTo(targetType);
+            cExample.setOrderByClause("created_time ASC");
+            List<ZhihuCommentDO> comments = commentMapper.selectByExampleWithBLOBs(cExample);
+            if (comments.isEmpty()) return;
+
+            // Build parent-children structure
             java.util.Map<Long, ZhihuCommentDO> commentMap = new java.util.LinkedHashMap<>();
-            for (ZhihuCommentDO c : comments) {
-                commentMap.put(c.getCommentId(), c);
-            }
+            for (ZhihuCommentDO c : comments) commentMap.put(c.getCommentId(), c);
 
-            // Separate root comments and child comments
             java.util.List<ZhihuCommentDO> roots = new java.util.ArrayList<>();
             java.util.Map<Long, java.util.List<ZhihuCommentDO>> childrenMap = new java.util.LinkedHashMap<>();
             for (ZhihuCommentDO c : comments) {
@@ -225,73 +233,112 @@ public class MarkdownViewController {
                     childrenMap.computeIfAbsent(c.getParentCommentId(), k -> new java.util.ArrayList<>()).add(c);
                 }
             }
+            // Orphan children (parent not in result set)
+            for (ZhihuCommentDO c : comments) {
+                if (c.getParentCommentId() != null && !commentMap.containsKey(c.getParentCommentId())) {
+                    roots.add(c);
+                }
+            }
+
+            html.append("<div class=\"comment-section\">");
+            html.append("<div class=\"comment-toggle\" onclick=\"this.parentElement.classList.toggle('open')\">");
+            html.append("<span>作者互动评论 (").append(comments.size()).append(")</span>");
+            html.append("<svg class=\"chevron\" width=\"12\" height=\"8\" viewBox=\"0 0 12 8\" fill=\"none\"><path d=\"M1 1.5L6 6.5L11 1.5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>");
+            html.append("</div>");
+            html.append("<div class=\"comment-body\">");
 
             for (ZhihuCommentDO root : roots) {
-                appendCommentLine(md, root, "💬", null);
+                html.append("<div class=\"comment-thread\">");
+                appendSingleCommentHtml(html, root, null);
                 java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
-                if (children != null) {
+                if (children != null && !children.isEmpty()) {
+                    html.append("<div class=\"comment-replies\">");
                     for (ZhihuCommentDO child : children) {
-                        appendCommentLine(md, child, "↳", child.getReplyToAuthor());
+                        appendSingleCommentHtml(html, child, child.getReplyToAuthor());
                     }
+                    html.append("</div>");
                 }
-                md.append("---\n\n");
+                html.append("</div>");
             }
 
-            // Also render orphan children (parent not in this result set)
-            for (ZhihuCommentDO c : comments) {
-                if (c.getParentCommentId() != null && !roots.isEmpty()
-                        && !commentMap.containsKey(c.getParentCommentId())) {
-                    appendCommentLine(md, c, "💬", c.getReplyToAuthor());
-                    md.append("---\n\n");
-                }
+            html.append("</div></div>");
+        }
+
+        private void appendSingleCommentHtml(StringBuilder html, ZhihuCommentDO c, String replyTo) {
+            html.append("<div class=\"comment-item\">");
+            html.append("<div class=\"comment-author\">").append(escape(safe(c.getAuthorName())));
+            if (replyTo != null && !replyTo.isEmpty()) {
+                html.append("<span class=\"comment-reply-to\"> → ").append(escape(replyTo)).append("</span>");
             }
+            html.append("</div>");
+            html.append("<div class=\"comment-content\">").append(escape(stripHtml(c.getContent()))).append("</div>");
+            html.append("<div class=\"comment-meta\">");
+            if (c.getCreatedTime() != null) html.append("<span>").append(c.getCreatedTime()).append("</span>");
+            if (c.getLikeCount() != null && c.getLikeCount() > 0) html.append("<span>👍 ").append(c.getLikeCount()).append("</span>");
+            html.append("</div>");
+            html.append("</div>");
         }
-    }
 
-    private void appendCommentLine(StringBuilder md, ZhihuCommentDO c, String prefix, String replyTo) {
-        md.append(prefix).append(" **").append(safe(c.getAuthorName())).append("**");
-        if (replyTo != null && !replyTo.isEmpty()) {
-            md.append(" → ").append(replyTo);
-        }
-        md.append("\n\n");
-        md.append("> ").append(safe(c.getContent())).append("\n\n");
-        if (c.getCreatedTime() != null) md.append("*").append(c.getCreatedTime()).append("*");
-        if (c.getLikeCount() != null && c.getLikeCount() > 0) md.append(" 👍").append(c.getLikeCount());
-        md.append("\n\n");
-    }
+        /**
+         * 输出股吧评论为可折叠 HTML
+         */
+        private void appendGubaCommentsHtml(StringBuilder html, Long postId) {
+            GubaCommentDOExample cExample = new GubaCommentDOExample();
+            cExample.createCriteria().andPostIdEqualTo(postId);
+            cExample.setOrderByClause("publish_time ASC");
+            List<GubaCommentDO> comments = gubaCommentMapper.selectByExampleWithBLOBs(cExample);
+            if (comments.isEmpty()) return;
 
-    private void appendGubaComments(StringBuilder md, Long postId) {
-        GubaCommentDOExample cExample = new GubaCommentDOExample();
-        cExample.createCriteria().andPostIdEqualTo(postId);
-        cExample.setOrderByClause("publish_time ASC");
-        List<GubaCommentDO> comments = gubaCommentMapper.selectByExampleWithBLOBs(cExample);
-        if (!comments.isEmpty()) {
-            md.append("## 评论 (").append(comments.size()).append(")\n\n");
+            html.append("<div class=\"comment-section\">");
+            html.append("<div class=\"comment-toggle\" onclick=\"this.parentElement.classList.toggle('open')\">");
+            html.append("<span>评论 (").append(comments.size()).append(")</span>");
+            html.append("<svg class=\"chevron\" width=\"12\" height=\"8\" viewBox=\"0 0 12 8\" fill=\"none\"><path d=\"M1 1.5L6 6.5L11 1.5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>");
+            html.append("</div>");
+            html.append("<div class=\"comment-body\">");
+
             for (GubaCommentDO c : comments) {
-                md.append("💬 **").append(safe(c.getAuthorName())).append("**");
-                if (c.getReplyToUser() != null) md.append(" → ").append(c.getReplyToUser());
-                md.append("\n\n");
-                md.append("> ").append(safe(c.getContent())).append("\n\n");
-                if (c.getPublishTime() != null) md.append("*").append(c.getPublishTime()).append("*");
-                if (c.getLikeCount() != null && c.getLikeCount() > 0) md.append(" 👍").append(c.getLikeCount());
-                md.append("\n\n---\n\n");
+                html.append("<div class=\"comment-thread\"><div class=\"comment-item\">");
+                html.append("<div class=\"comment-author\">").append(escape(safe(c.getAuthorName())));
+                if (c.getReplyToUser() != null) {
+                    html.append("<span class=\"comment-reply-to\"> → ").append(escape(c.getReplyToUser())).append("</span>");
+                }
+                html.append("</div>");
+                html.append("<div class=\"comment-content\">").append(escape(stripHtml(c.getContent()))).append("</div>");
+                html.append("<div class=\"comment-meta\">");
+                if (c.getPublishTime() != null) html.append("<span>").append(c.getPublishTime()).append("</span>");
+                if (c.getLikeCount() != null && c.getLikeCount() > 0) html.append("<span>👍 ").append(c.getLikeCount()).append("</span>");
+                html.append("</div>");
+                html.append("</div></div>");
+            }
+
+            html.append("</div></div>");
+        }
+
+        /**
+         * 输出 AI 分析为可折叠 HTML
+         */
+        private void appendAiAnalysisHtml(StringBuilder html, String source, Long targetId, String targetType) {
+            AiAnalysisDOExample aExample = new AiAnalysisDOExample();
+            aExample.createCriteria()
+                    .andSourceEqualTo(source)
+                    .andTargetIdEqualTo(targetId)
+                    .andTargetTypeEqualTo(targetType)
+                    .andStatusEqualTo("COMPLETED");
+            List<AiAnalysisDO> analyses = aiAnalysisMapper.selectByExampleWithBLOBs(aExample);
+            if (analyses.isEmpty()) return;
+
+            for (AiAnalysisDO a : analyses) {
+                html.append("<div class=\"comment-section open\">");
+                html.append("<div class=\"comment-toggle\" onclick=\"this.parentElement.classList.toggle('open')\">");
+                html.append("<span>AI 分析 (").append(escape(safe(a.getAiModel()))).append(")</span>");
+                html.append("<svg class=\"chevron\" width=\"12\" height=\"8\" viewBox=\"0 0 12 8\" fill=\"none\"><path d=\"M1 1.5L6 6.5L11 1.5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>");
+                html.append("</div>");
+                html.append("<div class=\"comment-body\"><div class=\"ai-content\">");
+                // Render AI result as markdown
+                html.append(renderMarkdown(safe(a.getResult())));
+                html.append("</div></div></div>");
             }
         }
-    }
-
-    private void appendAiAnalysis(StringBuilder md, String source, Long targetId, String targetType) {
-        AiAnalysisDOExample aExample = new AiAnalysisDOExample();
-        aExample.createCriteria()
-                .andSourceEqualTo(source)
-                .andTargetIdEqualTo(targetId)
-                .andTargetTypeEqualTo(targetType)
-                .andStatusEqualTo("COMPLETED");
-        List<AiAnalysisDO> analyses = aiAnalysisMapper.selectByExampleWithBLOBs(aExample);
-        for (AiAnalysisDO a : analyses) {
-            md.append("## AI 分析 (").append(safe(a.getAiModel())).append(" - ").append(safe(a.getAnalysisType())).append(")\n\n");
-            md.append(safe(a.getResult())).append("\n\n");
-        }
-    }
 
     private String renderMarkdown(String markdown) {
         Node document = parser.parse(markdown);
@@ -317,105 +364,219 @@ public class MarkdownViewController {
     }
 
     private String wrapHtml(String title, String content) {
-        String header = """
-                <!doctype html>
-                <html lang="zh-CN">
-                <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1">
-                  <title>阅读 - __TITLE__</title>
-                  <style>
-                    :root {
-                      color-scheme: light;
-                      --bg: #f4f5f1;
-                      --ink: #0c1f23;
-                      --muted: #516068;
-                      --card: #ffffff;
-                      --accent: #0f766e;
-                    }
-                    body {
-                      margin: 0;
-                      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-                      color: var(--ink);
-                      background: var(--bg);
-                    }
-                    header {
-                      position: sticky;
-                      top: 0;
-                      background: rgba(255, 255, 255, 0.9);
-                      backdrop-filter: blur(8px);
-                      border-bottom: 1px solid rgba(12, 31, 35, 0.08);
-                      padding: 12px 16px;
-                      display: flex;
-                      align-items: center;
-                      gap: 12px;
-                      z-index: 10;
-                    }
-                    header a {
-                      color: var(--accent);
-                      font-weight: 600;
-                      text-decoration: none;
-                    }
-                    main {
-                      max-width: 860px;
-                      margin: 0 auto;
-                      padding: 20px 16px 48px;
-                    }
-                    article {
-                      background: var(--card);
-                      border-radius: 16px;
-                      padding: 22px;
-                      box-shadow: 0 14px 40px rgba(10, 27, 31, 0.08);
-                    }
-                    h1, h2, h3, h4 {
-                      font-family: "Fraunces", "Noto Serif SC", serif;
-                    }
-                    img {
-                      max-width: 100%;
-                      height: auto;
-                      border-radius: 10px;
-                    }
-                    pre {
-                      overflow: auto;
-                      background: #0c1f23;
-                      color: #e4ecef;
-                      padding: 12px 14px;
-                      border-radius: 12px;
-                    }
-                    code {
-                      background: rgba(12, 31, 35, 0.08);
-                      padding: 0 6px;
-                      border-radius: 6px;
-                    }
-                    blockquote {
-                      border-left: 4px solid rgba(15, 118, 110, 0.4);
-                      padding-left: 12px;
-                      color: var(--muted);
-                    }
-                    a { color: var(--accent); }
-                  </style>
-                </head>
-                <body>
-                  <header>
-                    <a href="/">返回首页</a>
-                    <span>内容浏览</span>
-                  </header>
-                  <main>
-                    <article>
-                """;
+            String header = """
+                    <!doctype html>
+                    <html lang="zh-CN">
+                    <head>
+                      <meta charset="UTF-8">
+                      <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+                      <meta name="apple-mobile-web-app-capable" content="yes">
+                      <title>__TITLE__</title>
+                      <style>
+                        :root {
+                          --system-bg: #F2F2F7;
+                          --grouped-bg: #FFFFFF;
+                          --label: #000000;
+                          --label-secondary: #3C3C43;
+                          --label-tertiary: #3C3C4399;
+                          --separator: #3C3C4336;
+                          --tint: #007AFF;
+                          --fill-tertiary: #7676801F;
+                          --safe-bottom: env(safe-area-inset-bottom, 0px);
+                        }
+                        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+                        html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+                        body {
+                          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+                                       "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+                          font-size: 17px; line-height: 1.58;
+                          color: var(--label);
+                          background: var(--system-bg);
+                          -webkit-font-smoothing: antialiased;
+                          -webkit-tap-highlight-color: transparent;
+                        }
+                        .reader-nav {
+                          position: sticky; top: 0; z-index: 20;
+                          background: rgba(249,249,249,0.94);
+                          -webkit-backdrop-filter: saturate(180%) blur(20px);
+                          backdrop-filter: saturate(180%) blur(20px);
+                          border-bottom: 0.5px solid var(--separator);
+                        }
+                        .reader-nav-inner {
+                          max-width: 700px; margin: 0 auto;
+                          display: flex; align-items: center;
+                          height: 44px; padding: 0 16px; gap: 12px;
+                        }
+                        .back-btn {
+                          display: inline-flex; align-items: center; gap: 4px;
+                          color: var(--tint); text-decoration: none;
+                          font-size: 17px; font-weight: 400; padding: 4px 0;
+                        }
+                        .back-btn:active { opacity: 0.5; }
+                        .back-btn svg { flex-shrink: 0; }
+                        .nav-title-text {
+                          flex: 1; text-align: center;
+                          font-size: 17px; font-weight: 600; color: var(--label);
+                          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                          margin-right: 60px;
+                        }
+                        .reader-main {
+                          max-width: 700px; margin: 0 auto;
+                          padding: 16px 16px calc(32px + var(--safe-bottom));
+                        }
+                        .reader-card {
+                          background: var(--grouped-bg);
+                          border-radius: 12px; padding: 20px 18px; overflow: hidden;
+                        }
+                        .reader-card h1 { font-size: 22px; font-weight: 700; line-height: 1.3; margin-bottom: 16px; letter-spacing: -0.02em; }
+                        .reader-card h2 { font-size: 19px; font-weight: 700; line-height: 1.35; margin-top: 28px; margin-bottom: 10px; padding-top: 20px; border-top: 0.5px solid var(--separator); }
+                        .reader-card h2:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+                        .reader-card h3 { font-size: 17px; font-weight: 600; line-height: 1.4; margin-top: 22px; margin-bottom: 8px; }
+                        .reader-card h4 { font-size: 15px; font-weight: 600; line-height: 1.4; margin-top: 18px; margin-bottom: 6px; color: var(--label-secondary); }
+                        .reader-card p { margin-bottom: 14px; font-size: 17px; line-height: 1.65; }
+                        .reader-card ul, .reader-card ol { margin-bottom: 14px; padding-left: 22px; }
+                        .reader-card li { margin-bottom: 6px; font-size: 17px; line-height: 1.58; }
+                        .reader-card img { max-width: 100%; height: auto; border-radius: 10px; margin: 12px 0; display: block; }
+                        .reader-card a { color: var(--tint); text-decoration: none; }
+                        .reader-card a:active { opacity: 0.5; }
+                        .reader-card blockquote { border-left: 3px solid var(--tint); padding: 2px 0 2px 14px; margin: 14px 0; color: var(--label-secondary); font-size: 16px; }
+                        .reader-card pre { overflow-x: auto; -webkit-overflow-scrolling: touch; background: #1C1C1E; color: #F5F5F7; padding: 14px 16px; border-radius: 10px; font-size: 14px; line-height: 1.5; margin: 14px 0; }
+                        .reader-card code { background: var(--fill-tertiary); padding: 2px 6px; border-radius: 5px; font-size: 15px; }
+                        .reader-card pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+                        .reader-card hr { border: none; border-top: 0.5px solid var(--separator); margin: 24px 0; }
+                        .reader-card table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 15px; }
+                        .reader-card th, .reader-card td { padding: 8px 10px; text-align: left; border-bottom: 0.5px solid var(--separator); }
+                        .reader-card th { font-weight: 600; font-size: 13px; color: var(--label-tertiary); text-transform: uppercase; }
 
-        String footer = """
-                    </article>
-                  </main>
-                </body>
-                </html>
-                """;
+                        /* Collapsible comment/AI sections */
+                        .comment-section {
+                          margin-top: 20px; border-top: 0.5px solid var(--separator); padding-top: 0;
+                        }
+                        .comment-toggle {
+                          display: flex; align-items: center; justify-content: space-between;
+                          padding: 14px 0; cursor: pointer;
+                          -webkit-tap-highlight-color: transparent;
+                          user-select: none;
+                        }
+                        .comment-toggle span {
+                          font-size: 17px; font-weight: 600; color: var(--label);
+                        }
+                        .comment-toggle .chevron {
+                          color: var(--label-tertiary);
+                          transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+                        }
+                        .comment-section.open .comment-toggle .chevron {
+                          transform: rotate(180deg);
+                        }
+                        .comment-body {
+                          max-height: 0; overflow: hidden;
+                          transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+                        }
+                        .comment-section.open .comment-body {
+                          max-height: 50000px;
+                          transition: max-height 0.5s ease-in;
+                        }
 
-        return header.replace("__TITLE__", escape(title)) + content + footer;
-    }
+                        /* Comment thread */
+                        .comment-thread {
+                          padding: 12px 0;
+                        }
+                        .comment-thread + .comment-thread {
+                          border-top: 0.5px solid var(--separator);
+                        }
+                        .comment-item { margin-bottom: 2px; }
+                        .comment-author {
+                          font-size: 15px; font-weight: 600; color: var(--label);
+                          margin-bottom: 4px;
+                        }
+                        .comment-reply-to {
+                          font-weight: 400; color: var(--label-tertiary); font-size: 14px;
+                        }
+                        .comment-content {
+                          font-size: 15px; line-height: 1.55; color: var(--label);
+                          margin-bottom: 4px; white-space: pre-wrap; word-break: break-word;
+                        }
+                        .comment-meta {
+                          display: flex; gap: 12px;
+                          font-size: 13px; color: var(--label-tertiary);
+                          margin-bottom: 8px;
+                        }
+
+                        /* Replies (indented) */
+                        .comment-replies {
+                          margin-left: 20px;
+                          padding-left: 12px;
+                          border-left: 2px solid var(--fill-tertiary);
+                        }
+                        .comment-replies .comment-item {
+                          padding: 8px 0;
+                        }
+                        .comment-replies .comment-item + .comment-item {
+                          border-top: 0.5px solid var(--separator);
+                        }
+
+                        /* AI analysis content */
+                        .ai-content { padding-bottom: 8px; }
+                        .ai-content p { font-size: 15px; line-height: 1.6; margin-bottom: 10px; }
+                        .ai-content h1, .ai-content h2, .ai-content h3 { margin-top: 16px; margin-bottom: 8px; }
+                        .ai-content h2 { font-size: 17px; border-top: none; padding-top: 0; }
+                        .ai-content h3 { font-size: 15px; }
+                        .ai-content ul, .ai-content ol { margin-bottom: 10px; padding-left: 20px; }
+                        .ai-content li { font-size: 15px; line-height: 1.55; margin-bottom: 4px; }
+
+                        @media (max-width: 500px) {
+                          .reader-card { padding: 16px 14px; border-radius: 10px; }
+                          .reader-card h1 { font-size: 20px; }
+                          .reader-card h2 { font-size: 18px; }
+                          .reader-card p, .reader-card li { font-size: 16px; }
+                          .comment-replies { margin-left: 12px; padding-left: 10px; }
+                        }
+                      </style>
+                    </head>
+                    <body>
+                      <nav class="reader-nav">
+                        <div class="reader-nav-inner">
+                          <a class="back-btn" href="/">
+                            <svg width="10" height="18" viewBox="0 0 10 18" fill="none"><path d="M9 1L1 9l8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            返回
+                          </a>
+                          <div class="nav-title-text">__TITLE__</div>
+                        </div>
+                      </nav>
+                      <main class="reader-main">
+                        <div class="reader-card">
+                    """;
+
+            String footer = """
+                        </div>
+                      </main>
+                    </body>
+                    </html>
+                    """;
+
+            return header.replace("__TITLE__", escape(title)) + content + footer;
+        }
 
     private String escape(String value) {
         return value == null ? "" : value.replace("&", "&amp;").replace("<", "&lt;")
                 .replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    /**
+     * 将 HTML 内容转为纯文本：去除标签，转换常见实体
+     */
+    private String stripHtml(String html) {
+        if (html == null || html.isEmpty()) return "";
+        String text = html.replaceAll("(?i)<br\\s*/?>", "\n");
+        text = text.replaceAll("(?i)</p>", "\n");
+        text = text.replaceAll("<[^>]+>", "");
+        text = text.replace("&nbsp;", " ")
+                   .replace("&amp;", "&")
+                   .replace("&lt;", "<")
+                   .replace("&gt;", ">")
+                   .replace("&quot;", "\"")
+                   .replace("&#39;", "'");
+        text = text.replaceAll("\n{3,}", "\n\n").trim();
+        return text;
     }
 }
