@@ -106,7 +106,12 @@ public class ZhihuApiController {
         params.put("withComments", withComments);
 
         return taskService.submit("zhihu-fetch", "抓取链接内容", params,
-                () -> zhihuCommand.fetchByUrl(request.url, save, withComments));
+                (task) -> {
+                    task.setTotalSteps(withComments ? 3 : 2);
+                    task.stepStart("解析链接");
+                    String result = zhihuCommand.fetchByUrl(request.url, save, withComments);
+                    return result;
+                });
     }
 
     @PostMapping("/sync")
@@ -121,7 +126,7 @@ public class ZhihuApiController {
         params.put("withComments", withComments);
 
         return taskService.submit("zhihu-sync", "同步用户动态", params,
-                () -> zhihuCommand.syncUserActivities(request.userId, limit, withComments));
+                (task) -> zhihuCommand.syncUserActivities(request.userId, limit, withComments, task));
     }
 
     @PostMapping("/analyze")

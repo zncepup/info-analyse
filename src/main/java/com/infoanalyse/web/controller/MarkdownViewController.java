@@ -29,13 +29,15 @@ public class MarkdownViewController {
     private final ZhihuCommentDOMapper commentMapper;
     private final GubaCommentDOMapper gubaCommentMapper;
     private final AiAnalysisDOMapper aiAnalysisMapper;
+    private final ZhihuPinDOMapper pinMapper;
 
     public MarkdownViewController(ZhihuAnswerDOMapper answerMapper,
                                   ZhihuArticleDOMapper articleMapper,
                                   GubaPostDOMapper gubaPostMapper,
                                   ZhihuCommentDOMapper commentMapper,
                                   GubaCommentDOMapper gubaCommentMapper,
-                                  AiAnalysisDOMapper aiAnalysisMapper) {
+                                  AiAnalysisDOMapper aiAnalysisMapper,
+                                  ZhihuPinDOMapper pinMapper) {
         this.parser = Parser.builder().build();
         this.renderer = HtmlRenderer.builder().escapeHtml(false).build();
         this.answerMapper = answerMapper;
@@ -44,6 +46,7 @@ public class MarkdownViewController {
         this.commentMapper = commentMapper;
         this.gubaCommentMapper = gubaCommentMapper;
         this.aiAnalysisMapper = aiAnalysisMapper;
+        this.pinMapper = pinMapper;
     }
 
     /**
@@ -145,6 +148,37 @@ public class MarkdownViewController {
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(safe(post.getTitle()), html));
     }
 
+    /**
+     * 查看知乎想法
+     */
+    @GetMapping(value = "/view/zhihu/pin/{pinId}", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> viewPin(@PathVariable("pinId") Long pinId) {
+        ZhihuPinDOExample example = new ZhihuPinDOExample();
+        example.createCriteria().andPinIdEqualTo(pinId);
+        List<ZhihuPinDO> list = pinMapper.selectByExampleWithBLOBs(example);
+        if (list.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "想法不存在");
+
+        ZhihuPinDO pin = list.get(0);
+        String title = pin.getContent() != null && pin.getContent().length() > 50
+                ? pin.getContent().substring(0, 50) + "..." : "想法";
+        StringBuilder md = new StringBuilder();
+        md.append("# 想法\n\n");
+        md.append("---\n");
+        md.append("- **作者**: ").append(safe(pin.getAuthorName())).append("\n");
+        md.append("- **点赞**: ").append(pin.getLikeCount()).append("\n");
+        md.append("- **评论**: ").append(pin.getCommentCount()).append("\n");
+        md.append("- **转发**: ").append(pin.getRepinCount()).append("\n");
+        if (pin.getUrl() != null) md.append("- **原文链接**: [链接](").append(pin.getUrl()).append(")\n");
+        if (pin.getCreatedTime() != null) md.append("- **创建时间**: ").append(pin.getCreatedTime()).append("\n");
+        md.append("---\n\n");
+        md.append(safe(pin.getContent())).append("\n\n");
+
+        appendAiAnalysis(md, "zhihu", pinId, "pin");
+
+        String html = renderMarkdown(md.toString());
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(wrapHtml(title, html));
+    }
+
     // ========== 旧路由兼容: /view/{author}/{file} ==========
 
     @GetMapping(value = "/view/{author}/{file:.+}", produces = MediaType.TEXT_HTML_VALUE)
@@ -174,14 +208,56 @@ public class MarkdownViewController {
         List<ZhihuCommentDO> comments = commentMapper.selectByExampleWithBLOBs(cExample);
         if (!comments.isEmpty()) {
             md.append("## 作者互动评论\n\n");
+
+            // Build a map for lookup by commentId
+            java.util.Map<Long, ZhihuCommentDO> commentMap = new java.util.LinkedHashMap<>();
             for (ZhihuCommentDO c : comments) {
-                md.append("💬 **").append(safe(c.getAuthorName())).append("**\n\n");
-                md.append("> ").append(safe(c.getContent())).append("\n\n");
-                if (c.getCreatedTime() != null) md.append("*").append(c.getCreatedTime()).append("*");
-                if (c.getLikeCount() != null && c.getLikeCount() > 0) md.append(" 👍").append(c.getLikeCount());
-                md.append("\n\n---\n\n");
+                commentMap.put(c.getCommentId(), c);
+            }
+
+            // Separate root comments and child comments
+            java.util.List<ZhihuCommentDO> roots = new java.util.ArrayList<>();
+            java.util.Map<Long, java.util.List<ZhihuCommentDO>> childrenMap = new java.util.LinkedHashMap<>();
+            for (ZhihuCommentDO c : comments) {
+                if (c.getParentCommentId() == null) {
+                    roots.add(c);
+                } else {
+                    childrenMap.computeIfAbsent(c.getParentCommentId(), k -> new java.util.ArrayList<>()).add(c);
+                }
+            }
+
+            for (ZhihuCommentDO root : roots) {
+                appendCommentLine(md, root, "💬", null);
+                java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+                if (children != null) {
+                    for (ZhihuCommentDO child : children) {
+                        appendCommentLine(md, child, "↳", child.getReplyToAuthor());
+                    }
+                }
+                md.append("---\n\n");
+            }
+
+            // Also render orphan children (parent not in this result set)
+            for (ZhihuCommentDO c : comments) {
+                if (c.getParentCommentId() != null && !roots.isEmpty()
+                        && !commentMap.containsKey(c.getParentCommentId())) {
+                    appendCommentLine(md, c, "💬", c.getReplyToAuthor());
+                    md.append("---\n\n");
+                }
             }
         }
+    }
+
+    private void appendCommentLine(StringBuilder md, ZhihuCommentDO c, String prefix, String replyTo) {
+        md.append(prefix).append(" **").append(safe(c.getAuthorName())).append("**");
+        if (replyTo != null && !replyTo.isEmpty()) {
+            md.append(" → ").append(replyTo);
+        }
+        md.append("\n\n");
+        md.append("> ").append(safe(c.getContent())).append("\n\n");
+        if (c.getCreatedTime() != null) md.append("*").append(c.getCreatedTime()).append("*");
+        if (c.getLikeCount() != null && c.getLikeCount() > 0) md.append(" 👍").append(c.getLikeCount());
+        md.append("\n\n");
     }
 
     private void appendGubaComments(StringBuilder md, Long postId) {

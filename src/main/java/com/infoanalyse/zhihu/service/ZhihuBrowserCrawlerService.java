@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.infoanalyse.zhihu.model.ZhihuAnswer;
 import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
+import com.infoanalyse.zhihu.model.ZhihuPin;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.Cookie;
 import org.jsoup.Jsoup;
@@ -1086,6 +1087,11 @@ public class ZhihuBrowserCrawlerService {
                 }
             }
             
+            JsonNode replyTo = node.get("reply_to_author");
+            if (replyTo != null && !replyTo.isNull() && replyTo.has("name")) {
+                comment.setReplyToAuthor(replyTo.get("name").asText());
+            }
+            
             return comment;
         } catch (Exception e) {
             logger.warn("解析评论失败: {}", e.getMessage());
@@ -1226,6 +1232,16 @@ public class ZhihuBrowserCrawlerService {
             if (parts.length > 1) {
                 String articleId = parts[1].split("[?#]")[0];
                 return new String[]{"article", articleId};
+            }
+        }
+        
+        // 想法链接格式:
+        // https://www.zhihu.com/pin/xxx
+        if (url.contains("/pin/")) {
+            String[] parts = url.split("/pin/");
+            if (parts.length > 1) {
+                String pinId = parts[1].split("[?#]")[0];
+                return new String[]{"pin", pinId};
             }
         }
         
@@ -1561,7 +1577,7 @@ public class ZhihuBrowserCrawlerService {
      * 用户动态项（回答或文章）
      */
     public static class ActivityItem {
-        public String type; // "answer" 或 "article"
+        public String type; // "answer", "article", or "pin"
         public String id;
         public String title;
         public String url;
@@ -1574,6 +1590,9 @@ public class ZhihuBrowserCrawlerService {
         // 回答特有
         public String questionId;
         public String questionTitle;
+
+        // 想法特有
+        public String pinContent;
     }
     
     /**
@@ -1649,8 +1668,10 @@ public class ZhihuBrowserCrawlerService {
                             } else if ("MEMBER_CREATE_ARTICLE".equals(verb)) {
                                 // 文章
                                 item = parseActivityArticle(target);
+                            } else if ("MEMBER_CREATE_PIN".equals(verb)) {
+                                // 想法
+                                item = parseActivityPin(target);
                             }
-                            // 忽略 MEMBER_CREATE_PIN（想法）
                             
                             if (item != null) {
                                 activities.add(item);
@@ -1789,6 +1810,152 @@ public class ZhihuBrowserCrawlerService {
         } catch (Exception e) {
             logger.warn("解析文章动态失败: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * 解析动态中的想法
+     */
+    private ActivityItem parseActivityPin(JsonNode target) {
+        try {
+            ActivityItem item = new ActivityItem();
+            item.type = "pin";
+            item.id = target.get("id").asText();
+
+            // 想法内容在 content 数组中
+            StringBuilder contentBuilder = new StringBuilder();
+            JsonNode contentArray = target.get("content");
+            if (contentArray != null && contentArray.isArray()) {
+                for (JsonNode block : contentArray) {
+                    String type = block.has("type") ? block.get("type").asText() : "";
+                    if ("text".equals(type) && block.has("content")) {
+                        contentBuilder.append(block.get("content").asText());
+                    }
+                }
+            }
+            String content = contentBuilder.toString();
+            item.pinContent = content;
+            item.title = content.length() > 50 ? content.substring(0, 50) + "..." : content;
+            if (item.title.isEmpty()) item.title = "想法 " + item.id;
+
+            if (target.has("like_count")) item.voteupCount = target.get("like_count").asInt();
+            if (target.has("comment_count")) item.commentCount = target.get("comment_count").asInt();
+
+            JsonNode author = target.get("author");
+            if (author != null) {
+                if (author.has("url_token")) {
+                    item.authorId = author.get("url_token").asText();
+                } else {
+                    item.authorId = author.get("id").asText();
+                }
+                item.authorName = author.get("name").asText();
+            }
+
+            if (target.has("created")) {
+                item.createdTime = LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(target.get("created").asLong()),
+                    ZoneId.systemDefault());
+            }
+
+            item.url = "https://www.zhihu.com/pin/" + item.id;
+            return item;
+        } catch (Exception e) {
+            logger.warn("解析想法动态失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 通过ID抓取知乎想法详情
+     */
+    public ZhihuPin crawlPinById(String pinId) {
+        logger.info("开始抓取想法: {}", pinId);
+        System.out.println("正在抓取想法 " + pinId + "...");
+
+        initBrowser();
+        BrowserContext context = createContext();
+        Page page = context.newPage();
+
+        try {
+            String pinUrl = "https://www.zhihu.com/pin/" + pinId;
+            page.navigate(pinUrl);
+            page.waitForTimeout(2000);
+
+            // 使用 API 获取想法详情
+            String apiUrl = "https://www.zhihu.com/api/v4/pins/" + pinId;
+            String responseJson = (String) page.evaluate(
+                "(url) => fetch(url, {credentials: 'include'}).then(r => r.text())",
+                apiUrl
+            );
+
+            if (responseJson == null || responseJson.isEmpty()) {
+                throw new RuntimeException("API 响应为空");
+            }
+
+            JsonNode root = objectMapper.readTree(responseJson);
+            if (root.has("error")) {
+                throw new RuntimeException("API 错误: " + root.get("error"));
+            }
+
+            ZhihuPin pin = new ZhihuPin();
+            pin.setId(root.get("id").asText());
+            pin.setUrl(pinUrl);
+
+            // 解析内容
+            StringBuilder textContent = new StringBuilder();
+            StringBuilder htmlContent = new StringBuilder();
+            JsonNode contentArray = root.get("content");
+            if (contentArray != null && contentArray.isArray()) {
+                for (JsonNode block : contentArray) {
+                    String type = block.has("type") ? block.get("type").asText() : "";
+                    if ("text".equals(type) && block.has("content")) {
+                        String text = block.get("content").asText();
+                        textContent.append(text).append("\n");
+                        htmlContent.append("<p>").append(text).append("</p>");
+                    } else if ("image".equals(type) && block.has("url")) {
+                        String imgUrl = block.get("url").asText();
+                        htmlContent.append("<img src=\"").append(imgUrl).append("\">");
+                    } else if ("link".equals(type) && block.has("url")) {
+                        String linkUrl = block.get("url").asText();
+                        String linkTitle = block.has("title") ? block.get("title").asText() : linkUrl;
+                        textContent.append("[").append(linkTitle).append("](").append(linkUrl).append(")\n");
+                        htmlContent.append("<a href=\"").append(linkUrl).append("\">").append(linkTitle).append("</a>");
+                    }
+                }
+            }
+            pin.setContent(textContent.toString().trim());
+            pin.setHtmlContent(htmlContent.toString());
+
+            if (root.has("like_count")) pin.setLikeCount(root.get("like_count").asInt());
+            if (root.has("comment_count")) pin.setCommentCount(root.get("comment_count").asInt());
+            if (root.has("repin_count")) pin.setRepinCount(root.get("repin_count").asInt());
+
+            JsonNode author = root.get("author");
+            if (author != null) {
+                if (author.has("url_token")) pin.setAuthorId(author.get("url_token").asText());
+                else pin.setAuthorId(author.get("id").asText());
+                pin.setAuthorName(author.get("name").asText());
+            }
+
+            if (root.has("created")) {
+                pin.setCreatedTime(LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(root.get("created").asLong()),
+                    ZoneId.systemDefault()));
+            }
+            if (root.has("updated")) {
+                pin.setUpdatedTime(LocalDateTime.ofInstant(
+                    Instant.ofEpochSecond(root.get("updated").asLong()),
+                    ZoneId.systemDefault()));
+            }
+
+            System.out.println("想法抓取完成: " + pin.getContent().substring(0, Math.min(50, pin.getContent().length())));
+            return pin;
+
+        } catch (Exception e) {
+            logger.error("抓取想法失败: {}", pinId, e);
+            throw new RuntimeException("抓取想法失败: " + e.getMessage(), e);
+        } finally {
+            context.close();
         }
     }
 

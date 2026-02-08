@@ -40,6 +40,9 @@
         <table tableName="zhihu_comment" domainObjectName="ZhihuCommentDO">
             <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
         </table>
+        <table tableName="zhihu_pin" domainObjectName="ZhihuPinDO">
+            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
+        </table>
         <table tableName="guba_post" domainObjectName="GubaPostDO">
             <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
         </table>

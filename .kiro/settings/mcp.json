@@ -17,7 +17,8 @@
         "playwright_close",
         "playwright_console_logs",
         "playwright_post",
-        "playwright_get"
+        "playwright_get",
+        "playwright_resize"
       ]
     }
   }

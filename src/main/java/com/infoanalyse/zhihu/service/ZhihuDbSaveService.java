@@ -3,10 +3,12 @@ package com.infoanalyse.zhihu.service;
 import com.infoanalyse.dao.mapper.ZhihuAnswerDOMapper;
 import com.infoanalyse.dao.mapper.ZhihuArticleDOMapper;
 import com.infoanalyse.dao.mapper.ZhihuCommentDOMapper;
+import com.infoanalyse.dao.mapper.ZhihuPinDOMapper;
 import com.infoanalyse.dao.model.*;
 import com.infoanalyse.zhihu.model.ZhihuAnswer;
 import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
+import com.infoanalyse.zhihu.model.ZhihuPin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,13 +29,16 @@ public class ZhihuDbSaveService {
     private final ZhihuAnswerDOMapper answerMapper;
     private final ZhihuArticleDOMapper articleMapper;
     private final ZhihuCommentDOMapper commentMapper;
+    private final ZhihuPinDOMapper pinMapper;
 
     public ZhihuDbSaveService(ZhihuAnswerDOMapper answerMapper,
                               ZhihuArticleDOMapper articleMapper,
-                              ZhihuCommentDOMapper commentMapper) {
+                              ZhihuCommentDOMapper commentMapper,
+                              ZhihuPinDOMapper pinMapper) {
         this.answerMapper = answerMapper;
         this.articleMapper = articleMapper;
         this.commentMapper = commentMapper;
+        this.pinMapper = pinMapper;
     }
 
     /**
@@ -123,6 +128,53 @@ public class ZhihuDbSaveService {
             }
             logger.info("保存 {} 条评论 (articleId={})", article.getComments().size(), articleId);
         }
+    }
+
+    /**
+     * 保存想法到数据库
+     */
+    public void savePin(ZhihuPin pin) {
+        LocalDateTime now = LocalDateTime.now();
+        Long pinId = parseLong(pin.getId());
+        if (pinId == null) return;
+
+        ZhihuPinDOExample example = new ZhihuPinDOExample();
+        example.createCriteria().andPinIdEqualTo(pinId);
+        List<ZhihuPinDO> existing = pinMapper.selectByExample(example);
+
+        ZhihuPinDO record = new ZhihuPinDO();
+        record.setPinId(pinId);
+        record.setAuthorName(pin.getAuthorName());
+        record.setAuthorId(pin.getAuthorId());
+        record.setContent(pin.getContent());
+        record.setHtmlContent(pin.getHtmlContent());
+        record.setLikeCount(pin.getLikeCount());
+        record.setCommentCount(pin.getCommentCount());
+        record.setRepinCount(pin.getRepinCount());
+        record.setUrl(pin.getUrl());
+        record.setCreatedTime(pin.getCreatedTime());
+        record.setUpdatedTime(pin.getUpdatedTime());
+        record.setCrawlTime(now);
+
+        if (existing.isEmpty()) {
+            pinMapper.insertSelective(record);
+            logger.info("新增知乎想法: pinId={}", pinId);
+        } else {
+            record.setId(existing.get(0).getId());
+            pinMapper.updateByPrimaryKeySelective(record);
+            logger.info("更新知乎想法: pinId={}", pinId);
+        }
+    }
+
+    /**
+     * 检查想法是否已保存
+     */
+    public boolean isPinSaved(String pinId) {
+        Long id = parseLong(pinId);
+        if (id == null) return false;
+        ZhihuPinDOExample example = new ZhihuPinDOExample();
+        example.createCriteria().andPinIdEqualTo(id);
+        return pinMapper.countByExample(example) > 0;
     }
 
     /**

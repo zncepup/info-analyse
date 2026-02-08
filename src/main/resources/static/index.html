@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Info Analyse</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>投资信息分析系统</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;650&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
@@ -45,6 +45,10 @@
       box-shadow: 0 6px 16px rgba(15,118,110,0.3);
     }
     .header-actions { display: flex; gap: 8px; }
+    .header-nav { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--muted); }
+    .header-nav a { padding: 6px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; }
+    .header-nav a:hover { background: rgba(12,31,35,0.05); color: var(--ink); }
+    .nav-icon { display: none; font-size: 1.1rem; }
 
     /* Buttons */
     .btn {
@@ -132,6 +136,15 @@
     .tag-err { background: rgba(217,119,6,0.12); color: var(--warn); }
     .tag-run { background: rgba(29,78,216,0.1); color: #1d4ed8; }
 
+    /* Progress */
+    .progress-bar { width: 100%; height: 6px; background: rgba(12,31,35,0.08); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s ease; }
+    .progress-text { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+    .task-detail { cursor: pointer; }
+    .task-items { display: none; margin-top: 6px; padding: 6px 10px; background: rgba(12,31,35,0.03); border-radius: 8px; font-size: 0.78rem; color: var(--muted); max-height: 150px; overflow-y: auto; }
+    .task-items.open { display: block; }
+    .task-items div { padding: 2px 0; }
+
     /* File list */
     .file-list { list-style: none; padding: 0; display: grid; gap: 8px; }
     .file-item {
@@ -167,7 +180,21 @@
 
     @media (max-width: 700px) {
       .grid-2 { grid-template-columns: 1fr; }
-      .header { flex-direction: column; gap: 10px; align-items: flex-start; border-radius: var(--radius); }
+      .header { flex-direction: column; gap: 10px; align-items: flex-start; border-radius: var(--radius); backdrop-filter: none; }
+      .header-nav {
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+        width: 100%;
+        background: rgba(255,255,255,0.95); border-top: 1px solid var(--stroke);
+        box-shadow: 0 -2px 8px rgba(10,27,31,0.06);
+        display: flex; justify-content: space-around; padding: 6px 0 env(safe-area-inset-bottom, 4px);
+        backdrop-filter: blur(12px);
+      }
+      .header-nav a {
+        display: flex; flex-direction: column; align-items: center;
+        font-size: 0.7rem; padding: 4px 10px; gap: 1px;
+      }
+      .header-nav a .nav-icon { display: block; font-size: 1rem; line-height: 1.2; }
+      .page { padding-bottom: 56px; }
     }
   </style>
 </head>
@@ -176,24 +203,30 @@
   <header class="header">
     <div class="header-brand">
       <div class="header-logo">IA</div>
-      <span>Info Analyse</span>
+      <span>投资信息分析</span>
     </div>
+    <nav class="header-nav">
+      <a href="#crawl-section"><span class="nav-icon">🔗</span>抓取</a>
+      <a href="#task-section"><span class="nav-icon">📋</span>任务</a>
+      <a href="#content-section"><span class="nav-icon">📚</span>内容</a>
+      <a href="javascript:void(0)" onclick="refreshAll()"><span class="nav-icon">🔄</span>刷新</a>
+    </nav>
     <div class="header-actions">
-      <button class="btn btn-ghost" onclick="refreshAll()">Refresh</button>
+      <button class="btn btn-ghost" onclick="refreshAll()">刷新全部</button>
     </div>
   </header>
 
   <!-- Login Status -->
-  <div class="card">
-    <div class="card-title"><span class="icon">🔑</span> Login</div>
+  <div class="card" id="login-section">
+    <div class="card-title"><span class="icon">🔑</span> 登录状态</div>
     <div class="status-grid">
-      <div class="status-item"><div class="val" id="status-login">--</div><div class="lbl">Status</div></div>
+      <div class="status-item"><div class="val" id="status-login">--</div><div class="lbl">登录状态</div></div>
       <div class="status-item"><div class="val" id="status-cookies">--</div><div class="lbl">Cookies</div></div>
     </div>
     <div class="qr-box">
       <div class="qr-actions">
-        <button class="btn btn-primary btn-sm" onclick="startQrLogin()">Scan QR</button>
-        <button class="btn btn-ghost btn-sm" onclick="stopQrLogin()">Stop</button>
+        <button class="btn btn-primary btn-sm" onclick="startQrLogin()">扫码登录</button>
+        <button class="btn btn-ghost btn-sm" onclick="stopQrLogin()">结束会话</button>
         <span style="font-size:0.82rem;color:var(--muted)" id="qr-login-state"></span>
       </div>
       <img id="qr-login-image" class="qr-img" alt="QR">
@@ -202,56 +235,56 @@
   </div>
 
   <!-- Crawl Actions -->
-  <div class="grid-2">
+  <div class="grid-2" id="crawl-section">
     <div class="card">
-      <div class="card-title"><span class="icon">🔗</span> Fetch URL</div>
+      <div class="card-title"><span class="icon">🔗</span> 抓取链接</div>
       <form id="fetch-form">
         <div class="form-row">
-          <label for="fetch-url">Zhihu URL</label>
+          <label for="fetch-url">知乎链接</label>
           <input id="fetch-url" name="url" placeholder="https://www.zhihu.com/question/..." required>
         </div>
         <div class="form-row">
-          <div class="toggle-row"><span>With Comments</span><input type="checkbox" id="fetch-with-comments" checked></div>
+          <div class="toggle-row"><span>抓取评论</span><input type="checkbox" id="fetch-with-comments" checked></div>
         </div>
-        <div class="form-row"><button class="btn btn-primary" type="submit">Fetch</button></div>
+        <div class="form-row"><button class="btn btn-primary" type="submit">开始抓取</button></div>
       </form>
     </div>
     <div class="card">
-      <div class="card-title"><span class="icon">🔄</span> Sync User</div>
+      <div class="card-title"><span class="icon">🔄</span> 同步用户动态</div>
       <form id="sync-form">
         <div class="form-row">
-          <label for="sync-user">User ID</label>
-          <input id="sync-user" name="userId" placeholder="e.g. mr-dang-77" value="mr-dang-77" required>
+          <label for="sync-user">用户 ID</label>
+          <input id="sync-user" name="userId" placeholder="例如 mr-dang-77" value="mr-dang-77" required>
         </div>
         <div class="form-row">
-          <label for="sync-limit">Limit</label>
+          <label for="sync-limit">同步数量</label>
           <input id="sync-limit" name="limit" type="number" min="1" value="3">
         </div>
         <div class="form-row">
-          <div class="toggle-row"><span>With Comments</span><input type="checkbox" id="sync-with-comments" checked></div>
+          <div class="toggle-row"><span>抓取评论</span><input type="checkbox" id="sync-with-comments" checked></div>
         </div>
-        <div class="form-row"><button class="btn btn-primary" type="submit">Sync</button></div>
+        <div class="form-row"><button class="btn btn-primary" type="submit">开始同步</button></div>
       </form>
     </div>
   </div>
 
   <!-- Tasks -->
-  <div class="card">
+  <div class="card" id="task-section">
     <div class="toolbar">
-      <div class="card-title" style="margin-bottom:0"><span class="icon">📋</span> Tasks</div>
-      <button class="btn btn-ghost btn-sm" onclick="refreshTasks()">Refresh</button>
+      <div class="card-title" style="margin-bottom:0"><span class="icon">📋</span> 任务队列</div>
+      <button class="btn btn-ghost btn-sm" onclick="refreshTasks()">刷新</button>
     </div>
     <ul class="task-list" id="task-list"></ul>
   </div>
 
   <!-- Content Browser -->
-  <div class="card">
+  <div class="card" id="content-section">
     <div class="toolbar">
-      <div class="card-title" style="margin-bottom:0"><span class="icon">📚</span> Content</div>
-      <button class="btn btn-ghost btn-sm" onclick="refreshOutputs()">Refresh</button>
+      <div class="card-title" style="margin-bottom:0"><span class="icon">📚</span> 内容浏览</div>
+      <button class="btn btn-ghost btn-sm" onclick="refreshOutputs()">刷新</button>
     </div>
     <div class="form-row">
-      <label for="author-select">Author</label>
+      <label for="author-select">选择作者</label>
       <select id="author-select"></select>
     </div>
     <ul class="file-list" id="file-list"></ul>
@@ -287,8 +320,8 @@ const postJson = (url, body) => fetchJson(url, { method:'POST', headers:{'Conten
 const refreshStatus = async () => {
   try {
     const d = await fetchJson('/api/zhihu/status');
-    $('status-login').textContent = d.loggedIn ? 'Logged In' : 'Not Logged In';
-    $('status-cookies').textContent = d.hasCookies ? 'Saved' : 'None';
+    $('status-login').textContent = d.loggedIn ? '已登录' : '未登录';
+    $('status-cookies').textContent = d.hasCookies ? '已保存' : '未保存';
   } catch(e) { $('status-login').textContent = '--'; $('status-cookies').textContent = '--'; }
 };
 
@@ -311,7 +344,7 @@ const stopQrLogin = async () => {
   $('qr-login-image').style.display = 'none';
 };
 const renderQr = (p) => {
-  const labels = {WAITING:'Waiting',SCANNED:'Scanned',SUCCESS:'OK',EXPIRED:'Expired',FAILED:'Failed'};
+  const labels = {WAITING:'等待扫码',SCANNED:'已扫码',SUCCESS:'登录成功',EXPIRED:'已过期',FAILED:'失败'};
   $('qr-login-state').textContent = labels[p.status]||p.status||'';
   $('qr-login-message').textContent = p.message||'';
   if (p.qrImage) { $('qr-login-image').src = p.qrImage; $('qr-login-image').style.display = 'block'; }
@@ -326,82 +359,146 @@ const pollQr = async () => {
 };
 
 // Tasks
+const fmtRemaining = (ms) => {
+  if (!ms || ms <= 0) return '';
+  const s = Math.ceil(ms / 1000);
+  if (s < 60) return '约 ' + s + ' 秒';
+  const m = Math.ceil(s / 60);
+  return '约 ' + m + ' 分钟';
+};
+const renderPhases = (phases) => {
+  if (!phases || !Object.keys(phases).length) return '';
+  let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-top:8px">';
+  for (const [name, p] of Object.entries(phases)) {
+    const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
+    const color = p.failed > 0 ? 'var(--warn)' : p.done >= p.total ? 'var(--accent)' : '#1d4ed8';
+    html += '<div style="padding:6px 10px;border-radius:8px;background:rgba(12,31,35,0.03);font-size:0.78rem">'
+      + '<div style="font-weight:600;color:var(--ink);margin-bottom:3px">' + name + '</div>'
+      + '<div style="display:flex;align-items:center;gap:6px">'
+      + '<div style="flex:1;height:4px;background:rgba(12,31,35,0.08);border-radius:2px;overflow:hidden">'
+      + '<div style="height:100%;width:'+pct+'%;background:'+color+';border-radius:2px;transition:width 0.3s"></div></div>'
+      + '<span style="color:var(--muted);white-space:nowrap">'+p.done+'/'+p.total+'</span></div>'
+      + (p.remaining > 0 ? '<div style="color:var(--muted);margin-top:2px">待处理: '+p.remaining+'</div>' : '')
+      + (p.failed > 0 ? '<div style="color:var(--warn);margin-top:2px">失败: '+p.failed+'</div>' : '')
+      + (p.skipped > 0 ? '<div style="color:var(--muted);margin-top:2px">跳过: '+p.skipped+'</div>' : '')
+      + '</div>';
+  }
+  html += '</div>';
+  return html;
+};
 const refreshTasks = async () => {
   try {
     const tasks = await fetchJson('/api/tasks');
     taskList.innerHTML = '';
-    if (!tasks.length) { taskList.innerHTML = '<li class="task-item empty">No tasks</li>'; return; }
-    tasks.slice(0,20).forEach(t => {
+    if (!tasks.length) { taskList.innerHTML = '<li class="task-item empty">暂无任务</li>'; return; }
+    tasks.slice(0,20).forEach((t, idx) => {
       const cls = t.status==='COMPLETED'?'tag-ok':t.status==='FAILED'?'tag-err':'tag-run';
-      const labels = {PENDING:'Pending',RUNNING:'Running',COMPLETED:'Done',FAILED:'Failed'};
+      const labels = {PENDING:'排队中',RUNNING:'进行中',COMPLETED:'已完成',FAILED:'失败'};
       const msg = t.error||t.message||'';
-      const li = document.createElement('li'); li.className = 'task-item';
-      li.innerHTML = '<span><strong>'+t.title+'</strong><br><small>'+fmt(t.createdAt)+(msg?' &middot; '+msg:'')+'</small></span><span class="tag '+cls+'">'+(labels[t.status]||t.status)+'</span>';
+      const li = document.createElement('li'); li.className = 'task-item'; li.style.flexDirection = 'column'; li.style.alignItems = 'stretch';
+
+      let progressHtml = '';
+      if (t.status === 'RUNNING') {
+        const remaining = fmtRemaining(t.estimatedRemainingMs);
+        const stepInfo = t.currentStep ? '⏳ ' + t.currentStep : '';
+        progressHtml = '<div class="progress-bar"><div class="progress-fill" style="width:'+t.progress+'%"></div></div>'
+          + '<div class="progress-text">'
+          + (t.totalSteps > 0 ? t.completedSteps + '/' + t.totalSteps + ' 项' : '')
+          + (remaining ? ' · 剩余' + remaining : '')
+          + (stepInfo ? ' · ' + stepInfo : '')
+          + '</div>'
+          + renderPhases(t.phases);
+      }
+
+      let itemsHtml = '';
+      if (t.completedItems && t.completedItems.length > 0) {
+        const itemId = 'task-items-' + idx;
+        itemsHtml = '<div class="task-detail" onclick="document.getElementById(\''+itemId+'\').classList.toggle(\'open\')">'
+          + '<small style="color:var(--accent);cursor:pointer">📋 已完成 ' + t.completedItems.length + ' 项 (点击展开)</small></div>'
+          + '<div class="task-items" id="'+itemId+'">' + t.completedItems.map(i => '<div>'+i+'</div>').join('') + '</div>';
+      }
+
+      li.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between">'
+        + '<span><strong>'+t.title+'</strong><br><small>'+fmt(t.createdAt)+(msg?' &middot; '+msg:'')+'</small></span>'
+        + '<span class="tag '+cls+'">'+(labels[t.status]||t.status)+'</span></div>'
+        + progressHtml + itemsHtml;
       taskList.appendChild(li);
     });
-  } catch(e) { showToast('Failed to load tasks'); }
+  } catch(e) { showToast('任务加载失败'); }
 };
 
 // Content
 const renderFilePage = () => {
   fileList.innerHTML = '';
   pager.innerHTML = '';
-  if (!allFiles.length) { fileList.innerHTML = '<li class="file-item empty">No content</li>'; return; }
+  if (!allFiles.length) { fileList.innerHTML = '<li class="file-item empty">暂无内容</li>'; return; }
   const start = pageIdx * pageSize;
   const page = allFiles.slice(start, start + pageSize);
   page.forEach(f => {
     const li = document.createElement('li'); li.className = 'file-item';
-    const typeLabel = f.type==='article'?'Article':f.type==='answer'?'Answer':f.type;
-    const analyzed = f.analyzed?' &middot; ✅':'';
+    const typeLabel = f.type==='article'?'文章':f.type==='answer'?'回答':f.type==='pin'?'想法':f.type;
+    const analyzed = f.analyzed?' &middot; ✅ 已分析':'';
     const target = f.relativePath;
-    li.innerHTML = '<span><a class="file-link" href="'+f.viewUrl+'" target="_blank">'+(f.name||'Untitled')+'</a><div class="file-meta">'+typeLabel+analyzed+' &middot; '+fmt(f.lastModified)+'</div></span>'
+    li.innerHTML = '<span><a class="file-link" href="'+f.viewUrl+'" target="_blank">'+(f.name||'未知标题')+'</a><div class="file-meta">'+typeLabel+analyzed+' &middot; '+fmt(f.lastModified)+'</div></span>'
       + '<span class="file-actions">'
-      + (!f.analyzed ? '<button class="btn btn-accent-light btn-sm" onclick="analyzeFile(\''+target+'\')">AI Analyze</button>' : '')
+      + (!f.analyzed ? '<button class="btn btn-accent-light btn-sm" onclick="analyzeFile(\''+target+'\')">AI 分析</button>' : '')
+      + '<button class="btn btn-ghost btn-sm" onclick="deleteFile(\''+target+'\')">删除</button>'
       + '</span>';
     fileList.appendChild(li);
   });
   const totalPages = Math.ceil(allFiles.length / pageSize);
   if (totalPages > 1) {
-    pager.innerHTML = '<button class="btn btn-ghost btn-sm" '+(pageIdx<=0?'disabled':'')+' onclick="filePrev()">Prev</button>'
-      + '<span>'+(pageIdx+1)+' / '+totalPages+' ('+allFiles.length+')</span>'
-      + '<button class="btn btn-ghost btn-sm" '+(pageIdx>=totalPages-1?'disabled':'')+' onclick="fileNext()">Next</button>';
+    pager.innerHTML = '<button class="btn btn-ghost btn-sm" '+(pageIdx<=0?'disabled':'')+' onclick="filePrev()">上一页</button>'
+      + '<span>'+(pageIdx+1)+' / '+totalPages+' (共 '+allFiles.length+' 条)</span>'
+      + '<button class="btn btn-ghost btn-sm" '+(pageIdx>=totalPages-1?'disabled':'')+' onclick="fileNext()">下一页</button>';
   }
 };
 const filePrev = () => { if (pageIdx>0) { pageIdx--; renderFilePage(); } };
 const fileNext = () => { if (pageIdx < Math.ceil(allFiles.length/pageSize)-1) { pageIdx++; renderFilePage(); } };
 
 const analyzeFile = async (target) => {
-  try { await postJson('/api/zhihu/analyze', {file:target}); showToast('Analysis started'); refreshTasks(); } catch(e) { showToast(e.message); }
+  try { await postJson('/api/zhihu/analyze', {file:target}); showToast('已提交分析任务'); refreshTasks(); } catch(e) { showToast(e.message); }
+};
+
+const deleteFile = async (target) => {
+  if (!confirm('确定删除？关联的评论和AI分析结果也会一并删除。')) return;
+  try {
+    await fetchJson('/api/outputs/' + target, { method: 'DELETE' });
+    showToast('已删除');
+    refreshFiles(authorSelect.value);
+  } catch(e) { showToast(e.message); }
 };
 
 const refreshFiles = async (author) => {
   if (!author) { allFiles=[]; renderFilePage(); return; }
-  try { allFiles = await fetchJson('/api/outputs/'+encodeURIComponent(author)+'/files'); pageIdx=0; renderFilePage(); } catch(e) { showToast('Failed'); }
+  try { allFiles = await fetchJson('/api/outputs/'+encodeURIComponent(author)+'/files'); pageIdx=0; renderFilePage(); } catch(e) { showToast('加载失败'); }
 };
 
 const refreshOutputs = async () => {
   try {
+    const prev = authorSelect.value;
     const authors = await fetchJson('/api/outputs');
     authorSelect.innerHTML = '';
-    if (!authors.length) { authorSelect.innerHTML = '<option value="">No authors</option>'; allFiles=[]; renderFilePage(); return; }
+    if (!authors.length) { authorSelect.innerHTML = '<option value="">暂无作者</option>'; allFiles=[]; renderFilePage(); return; }
     authors.forEach(a => { const o = document.createElement('option'); o.value = a.name; o.textContent = a.name+' ('+a.mdCount+')'; authorSelect.appendChild(o); });
+    if (prev && [...authorSelect.options].some(o => o.value === prev)) { authorSelect.value = prev; }
     refreshFiles(authorSelect.value);
-  } catch(e) { showToast('Failed'); }
+  } catch(e) { showToast('加载失败'); }
 };
 
 // Forms
 $('fetch-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = $('fetch-url').value.trim();
-  if (!url) { showToast('Enter URL'); return; }
-  try { await postJson('/api/zhihu/fetch', {url, save:true, withComments:$('fetch-with-comments').checked}); showToast('Task created'); refreshTasks(); } catch(e) { showToast(e.message); }
+  if (!url) { showToast('请输入链接'); return; }
+  try { await postJson('/api/zhihu/fetch', {url, save:true, withComments:$('fetch-with-comments').checked}); showToast('任务已创建'); refreshTasks(); } catch(e) { showToast(e.message); }
 });
 
 $('sync-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const userId = syncUser.value.trim();
-  if (!userId) { showToast('Enter user ID'); return; }
-  try { await postJson('/api/zhihu/sync', {userId, limit:Number($('sync-limit').value||3), withComments:$('sync-with-comments').checked}); showToast('Task created'); refreshTasks(); } catch(e) { showToast(e.message); }
+  if (!userId) { showToast('请输入用户ID'); return; }
+  try { await postJson('/api/zhihu/sync', {userId, limit:Number($('sync-limit').value||3), withComments:$('sync-with-comments').checked}); showToast('任务已创建'); refreshTasks(); } catch(e) { showToast(e.message); }
 });
 
 authorSelect.addEventListener('change', (e) => refreshFiles(e.target.value));

@@ -4,10 +4,12 @@ import com.infoanalyse.dao.mapper.AiAnalysisDOMapper;
 import com.infoanalyse.dao.mapper.ZhihuAnswerDOMapper;
 import com.infoanalyse.dao.mapper.ZhihuArticleDOMapper;
 import com.infoanalyse.dao.mapper.GubaPostDOMapper;
+import com.infoanalyse.dao.mapper.ZhihuPinDOMapper;
 import com.infoanalyse.dao.model.*;
 import com.infoanalyse.zhihu.model.ZhihuAnswer;
 import com.infoanalyse.zhihu.model.ZhihuArticle;
 import com.infoanalyse.zhihu.model.ZhihuComment;
+import com.infoanalyse.zhihu.model.ZhihuPin;
 import com.infoanalyse.zhihu.service.DeepSeekService;
 import com.infoanalyse.zhihu.service.ZhihuDbSaveService;
 import com.infoanalyse.commons.service.WordExportService;
@@ -49,6 +51,9 @@ public class ZhihuCommand {
 
     @Autowired
     private GubaPostDOMapper gubaPostMapper;
+
+    @Autowired
+    private ZhihuPinDOMapper pinMapper;
 
     /**
      * 打开浏览器让用户登录知乎
@@ -243,6 +248,8 @@ public class ZhihuCommand {
                 return fetchAnswer(id, save, withComments);
             } else if ("article".equals(type)) {
                 return fetchArticle(id, save, withComments);
+            } else if ("pin".equals(type)) {
+                return fetchPin(id, save);
             }
             
             return "不支持的链接类型";
@@ -346,6 +353,41 @@ public class ZhihuCommand {
         
         return "文章抓取成功！";
     }
+
+    private String fetchPin(String pinId, boolean save) {
+        System.out.println("正在抓取想法 " + pinId + "...");
+        
+        ZhihuPin pin = zhihuBrowserCrawlerService.crawlPinById(pinId);
+        
+        System.out.println();
+        System.out.println("=== 想法详情 ===");
+        System.out.printf("作者: %s%n", pin.getAuthorName());
+        System.out.printf("点赞: %d | 评论: %d | 转发: %d%n", pin.getLikeCount(), pin.getCommentCount(), pin.getRepinCount());
+        System.out.printf("链接: %s%n", pin.getUrl());
+        if (pin.getContent() != null && !pin.getContent().isEmpty()) {
+            String preview = pin.getContent().length() > 200 ? 
+                pin.getContent().substring(0, 200) + "..." : pin.getContent();
+            System.out.printf("内容预览: %s%n", preview);
+        }
+        System.out.println();
+        
+        if (save) {
+            try {
+                zhihuDbSaveService.savePin(pin);
+                System.out.println("已保存到数据库");
+                try {
+                    analyzeContentFromDb("zhihu", Long.parseLong(pin.getId()), "pin");
+                } catch (Exception ae) {
+                    System.out.println("自动分析失败: " + ae.getMessage());
+                }
+            } catch (Exception e) {
+                System.out.println("保存失败: " + e.getMessage());
+            }
+        }
+        
+        return "想法抓取成功！";
+    }
+
     
     /**
      * 同步用户动态（增量抓取新内容）
@@ -355,6 +397,10 @@ public class ZhihuCommand {
             @ShellOption(value = "--user-id", help = "知乎用户ID") String userId,
             @ShellOption(value = "--limit", help = "检查动态数量限制", defaultValue = "50") int limit,
             @ShellOption(value = "--with-comments", help = "同时抓取作者参与的评论", defaultValue = "false") boolean withComments) {
+        return syncUserActivities(userId, limit, withComments, null);
+    }
+
+    public String syncUserActivities(String userId, int limit, boolean withComments, com.infoanalyse.web.task.TaskInfo taskInfo) {
         
         try {
             zhihuBrowserCrawlerService.setHeadless(true);
@@ -382,7 +428,8 @@ public class ZhihuCommand {
             
             long answerCount = activities.stream().filter(a -> "answer".equals(a.type)).count();
             long articleCount = activities.stream().filter(a -> "article".equals(a.type)).count();
-            System.out.println("其中回答: " + answerCount + " 条，文章: " + articleCount + " 条");
+            long pinCount = activities.stream().filter(a -> "pin".equals(a.type)).count();
+            System.out.println("其中回答: " + answerCount + " 条，文章: " + articleCount + " 条，想法: " + pinCount + " 条");
             System.out.println();
             
             // 检查哪些是新的
@@ -390,6 +437,7 @@ public class ZhihuCommand {
             
             List<ZhihuBrowserCrawlerService.ActivityItem> newAnswers = new java.util.ArrayList<>();
             List<ZhihuBrowserCrawlerService.ActivityItem> newArticles = new java.util.ArrayList<>();
+            List<ZhihuBrowserCrawlerService.ActivityItem> newPins = new java.util.ArrayList<>();
             
             for (ZhihuBrowserCrawlerService.ActivityItem item : activities) {
                 if ("answer".equals(item.type)) {
@@ -402,13 +450,30 @@ public class ZhihuCommand {
                     if (!zhihuDbSaveService.isArticleSaved(item.id)) {
                         newArticles.add(item);
                     }
+                } else if ("pin".equals(item.type)) {
+                    if (!zhihuDbSaveService.isPinSaved(item.id)) {
+                        newPins.add(item);
+                    }
                 }
             }
             
             System.out.println("新增回答: " + newAnswers.size() + " 条");
             System.out.println("新增文章: " + newArticles.size() + " 条");
+            System.out.println("新增想法: " + newPins.size() + " 条");
+
+            // 设置进度: 每个内容项 = 1个主步骤
+            int totalNew = newAnswers.size() + newArticles.size() + newPins.size();
+            if (taskInfo != null) {
+                taskInfo.setTotalSteps(totalNew);
+                // 分阶段进度
+                if (!newAnswers.isEmpty()) taskInfo.phaseInit("爬取回答", newAnswers.size());
+                if (!newArticles.isEmpty()) taskInfo.phaseInit("爬取文章", newArticles.size());
+                if (!newPins.isEmpty()) taskInfo.phaseInit("爬取想法", newPins.size());
+                if (withComments) taskInfo.phaseInit("爬取评论", totalNew);
+                taskInfo.phaseInit("AI分析", totalNew);
+            }
             
-            if (newAnswers.isEmpty() && newArticles.isEmpty()) {
+            if (newAnswers.isEmpty() && newArticles.isEmpty() && newPins.isEmpty()) {
                 System.out.println();
                 System.out.println("没有新内容需要抓取");
                 return "同步完成，无新内容";
@@ -425,30 +490,47 @@ public class ZhihuCommand {
                 ZhihuBrowserCrawlerService.ActivityItem item = newAnswers.get(i);
                 System.out.println();
                 System.out.println("[" + (i + 1) + "/" + newAnswers.size() + "] 抓取回答: " + item.title);
+                if (taskInfo != null) taskInfo.stepStart("抓取回答: " + item.title);
                 
                 try {
                     ZhihuAnswer answer = zhihuBrowserCrawlerService.crawlAnswerById(item.id);
+                    if (taskInfo != null) taskInfo.phaseDone("爬取回答");
                     
                     if (withComments && answer.getCommentCount() > 0 && answer.getAuthorId() != null) {
                         System.out.println("  抓取评论...");
+                        if (taskInfo != null) taskInfo.stepStart("抓取评论: " + item.title);
                         List<ZhihuComment> comments = zhihuBrowserCrawlerService.crawlAnswerComments(
                                 answer.getId(), answer.getAuthorId());
                         answer.setComments(comments);
                         System.out.println("  获取 " + comments.size() + " 条作者互动评论");
+                        if (taskInfo != null) taskInfo.phaseDone("爬取评论");
+                    } else if (withComments && taskInfo != null) {
+                        taskInfo.phaseSkip("爬取评论");
                     }
                     
                     zhihuDbSaveService.saveAnswer(answer);
                     savedCount++;
                     System.out.println("  ✓ 已保存");
+                    
                     // 自动AI分析
                     try {
+                        if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
                         analyzeContentFromDb("zhihu", Long.parseLong(answer.getId()), "answer");
+                        if (taskInfo != null) taskInfo.phaseDone("AI分析");
                     } catch (Exception ae) {
                         System.out.println("  自动分析失败: " + ae.getMessage());
+                        if (taskInfo != null) taskInfo.phaseFail("AI分析");
                     }
+                    if (taskInfo != null) taskInfo.stepDone("✓ 回答: " + item.title);
                     
                 } catch (Exception e) {
                     System.out.println("  ✗ 抓取失败: " + e.getMessage());
+                    if (taskInfo != null) {
+                        taskInfo.phaseFail("爬取回答");
+                        if (withComments) taskInfo.phaseSkip("爬取评论");
+                        taskInfo.phaseSkip("AI分析");
+                        taskInfo.stepDone("✗ 回答失败: " + item.title);
+                    }
                 }
                 
                 // 随机延迟 3-6 秒，避免被反爬
@@ -462,33 +544,91 @@ public class ZhihuCommand {
                 ZhihuBrowserCrawlerService.ActivityItem item = newArticles.get(i);
                 System.out.println();
                 System.out.println("[" + (i + 1) + "/" + newArticles.size() + "] 抓取文章: " + item.title);
+                if (taskInfo != null) taskInfo.stepStart("抓取文章: " + item.title);
                 
                 try {
                     ZhihuArticle article = zhihuBrowserCrawlerService.crawlArticleById(item.id);
+                    if (taskInfo != null) taskInfo.phaseDone("爬取文章");
                     
                     if (withComments && article.getCommentCount() > 0 && article.getAuthorId() != null) {
                         System.out.println("  抓取评论...");
+                        if (taskInfo != null) taskInfo.stepStart("抓取评论: " + item.title);
                         List<ZhihuComment> comments = zhihuBrowserCrawlerService.crawlArticleComments(
                                 article.getId(), article.getAuthorId());
                         article.setComments(comments);
                         System.out.println("  获取 " + comments.size() + " 条作者互动评论");
+                        if (taskInfo != null) taskInfo.phaseDone("爬取评论");
+                    } else if (withComments && taskInfo != null) {
+                        taskInfo.phaseSkip("爬取评论");
                     }
                     
                     zhihuDbSaveService.saveArticle(article);
                     savedCount++;
                     System.out.println("  ✓ 已保存");
+                    
                     // 自动AI分析
                     try {
+                        if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
                         analyzeContentFromDb("zhihu", Long.parseLong(article.getId()), "article");
+                        if (taskInfo != null) taskInfo.phaseDone("AI分析");
                     } catch (Exception ae) {
                         System.out.println("  自动分析失败: " + ae.getMessage());
+                        if (taskInfo != null) taskInfo.phaseFail("AI分析");
                     }
+                    if (taskInfo != null) taskInfo.stepDone("✓ 文章: " + item.title);
                     
                 } catch (Exception e) {
                     System.out.println("  ✗ 抓取失败: " + e.getMessage());
+                    if (taskInfo != null) {
+                        taskInfo.phaseFail("爬取文章");
+                        if (withComments) taskInfo.phaseSkip("爬取评论");
+                        taskInfo.phaseSkip("AI分析");
+                        taskInfo.stepDone("✗ 文章失败: " + item.title);
+                    }
                 }
                 
                 // 随机延迟 3-6 秒，避免被反爬
+                int delay = 3000 + random.nextInt(3000);
+                System.out.println("  等待 " + (delay / 1000.0) + " 秒...");
+                Thread.sleep(delay);
+            }
+            
+            // 抓取新想法
+            for (int i = 0; i < newPins.size(); i++) {
+                ZhihuBrowserCrawlerService.ActivityItem item = newPins.get(i);
+                System.out.println();
+                System.out.println("[" + (i + 1) + "/" + newPins.size() + "] 抓取想法: " + item.title);
+                if (taskInfo != null) taskInfo.stepStart("抓取想法: " + item.title);
+                
+                try {
+                    ZhihuPin pin = zhihuBrowserCrawlerService.crawlPinById(item.id);
+                    if (taskInfo != null) taskInfo.phaseDone("爬取想法");
+                    
+                    zhihuDbSaveService.savePin(pin);
+                    savedCount++;
+                    System.out.println("  ✓ 已保存");
+                    if (withComments && taskInfo != null) taskInfo.phaseSkip("爬取评论");
+                    
+                    // 自动AI分析
+                    try {
+                        if (taskInfo != null) taskInfo.stepStart("AI分析: " + item.title);
+                        analyzeContentFromDb("zhihu", Long.parseLong(pin.getId()), "pin");
+                        if (taskInfo != null) taskInfo.phaseDone("AI分析");
+                    } catch (Exception ae) {
+                        System.out.println("  自动分析失败: " + ae.getMessage());
+                        if (taskInfo != null) taskInfo.phaseFail("AI分析");
+                    }
+                    if (taskInfo != null) taskInfo.stepDone("✓ 想法: " + item.title);
+                } catch (Exception e) {
+                    System.out.println("  ✗ 抓取失败: " + e.getMessage());
+                    if (taskInfo != null) {
+                        taskInfo.phaseFail("爬取想法");
+                        if (withComments) taskInfo.phaseSkip("爬取评论");
+                        taskInfo.phaseSkip("AI分析");
+                        taskInfo.stepDone("✗ 想法失败: " + item.title);
+                    }
+                }
+                
                 int delay = 3000 + random.nextInt(3000);
                 System.out.println("  等待 " + (delay / 1000.0) + " 秒...");
                 Thread.sleep(delay);
@@ -712,6 +852,11 @@ public class ZhihuCommand {
             ex.createCriteria().andPostIdEqualTo(targetId);
             List<GubaPostDO> list = gubaPostMapper.selectByExampleWithBLOBs(ex);
             return list.isEmpty() ? null : list.get(0).getContent();
+        } else if ("zhihu".equals(source) && "pin".equals(targetType)) {
+            ZhihuPinDOExample ex = new ZhihuPinDOExample();
+            ex.createCriteria().andPinIdEqualTo(targetId);
+            List<ZhihuPinDO> list = pinMapper.selectByExampleWithBLOBs(ex);
+            return list.isEmpty() ? null : list.get(0).getContent();
         }
         return null;
     }
@@ -732,6 +877,13 @@ public class ZhihuCommand {
             ex.createCriteria().andPostIdEqualTo(targetId);
             List<GubaPostDO> list = gubaPostMapper.selectByExample(ex);
             return list.isEmpty() ? null : list.get(0).getTitle();
+        } else if ("zhihu".equals(source) && "pin".equals(targetType)) {
+            ZhihuPinDOExample ex = new ZhihuPinDOExample();
+            ex.createCriteria().andPinIdEqualTo(targetId);
+            List<ZhihuPinDO> list = pinMapper.selectByExample(ex);
+            if (list.isEmpty()) return null;
+            String content = list.get(0).getContent();
+            return content != null && content.length() > 50 ? content.substring(0, 50) + "..." : content;
         }
         return null;
     }

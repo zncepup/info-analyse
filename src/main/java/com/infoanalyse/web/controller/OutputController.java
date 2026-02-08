@@ -17,15 +17,21 @@ public class OutputController {
     private final ZhihuArticleDOMapper articleMapper;
     private final GubaPostDOMapper gubaPostMapper;
     private final AiAnalysisDOMapper aiAnalysisMapper;
+    private final ZhihuPinDOMapper pinMapper;
+    private final ZhihuCommentDOMapper commentMapper;
 
     public OutputController(ZhihuAnswerDOMapper answerMapper,
                             ZhihuArticleDOMapper articleMapper,
                             GubaPostDOMapper gubaPostMapper,
-                            AiAnalysisDOMapper aiAnalysisMapper) {
+                            AiAnalysisDOMapper aiAnalysisMapper,
+                            ZhihuPinDOMapper pinMapper,
+                            ZhihuCommentDOMapper commentMapper) {
         this.answerMapper = answerMapper;
         this.articleMapper = articleMapper;
         this.gubaPostMapper = gubaPostMapper;
         this.aiAnalysisMapper = aiAnalysisMapper;
+        this.pinMapper = pinMapper;
+        this.commentMapper = commentMapper;
     }
 
     /**
@@ -55,6 +61,16 @@ public class OutputController {
             zhihuAuthors.computeIfAbsent(author, k -> new long[]{0, 0, 0});
             zhihuAuthors.get(author)[1]++;
             long ct = a.getCrawlTime() != null ? toEpochMilli(a.getCrawlTime()) : 0;
+            if (ct > zhihuAuthors.get(author)[2]) zhihuAuthors.get(author)[2] = ct;
+        }
+
+        // 想法按作者分组
+        List<ZhihuPinDO> pins = pinMapper.selectByExample(new ZhihuPinDOExample());
+        for (ZhihuPinDO p : pins) {
+            String author = p.getAuthorName() != null ? p.getAuthorName() : "unknown";
+            zhihuAuthors.computeIfAbsent(author, k -> new long[]{0, 0, 0});
+            zhihuAuthors.get(author)[0]++;
+            long ct = p.getCrawlTime() != null ? toEpochMilli(p.getCrawlTime()) : 0;
             if (ct > zhihuAuthors.get(author)[2]) zhihuAuthors.get(author)[2] = ct;
         }
 
@@ -124,6 +140,24 @@ public class OutputController {
                         "/view/zhihu/article/" + a.getArticleId(), null, analyzed));
             }
 
+            ZhihuPinDOExample pinExample = new ZhihuPinDOExample();
+            pinExample.createCriteria().andAuthorNameEqualTo(author);
+            pinExample.setOrderByClause("crawl_time DESC");
+            List<ZhihuPinDO> pinList = pinMapper.selectByExampleWithBLOBs(pinExample);
+            for (ZhihuPinDO p : pinList) {
+                boolean analyzed = isAnalyzed("zhihu", p.getPinId(), "pin");
+                long modified = p.getCrawlTime() != null ? toEpochMilli(p.getCrawlTime()) : 0;
+                String title = p.getContent() != null && p.getContent().length() > 50
+                        ? p.getContent().substring(0, 50) + "..." : p.getContent();
+                if (title == null || title.isEmpty()) title = "想法" + p.getPinId();
+                files.add(new FileInfo(
+                        title,
+                        "zhihu/pin/" + p.getPinId(),
+                        p.getContent() != null ? p.getContent().length() : 0,
+                        modified, "pin",
+                        "/view/zhihu/pin/" + p.getPinId(), null, analyzed));
+            }
+
             files.sort(Comparator.comparingLong(FileInfo::lastModified).reversed());
         }
 
@@ -164,6 +198,50 @@ public class OutputController {
 
         files.sort(Comparator.comparingLong(FileInfo::lastModified).reversed());
         return files;
+    }
+
+    /**
+     * 删除内容及其关联的评论和AI分析结果
+     */
+    @DeleteMapping("/{source}/{type}/{id}")
+    public Map<String, Object> deleteContent(@PathVariable("source") String source,
+                                              @PathVariable("type") String type,
+                                              @PathVariable("id") Long id) {
+        int deleted = 0;
+
+        // 删除主体内容
+        if ("zhihu".equals(source) && "answer".equals(type)) {
+            ZhihuAnswerDOExample ex = new ZhihuAnswerDOExample();
+            ex.createCriteria().andAnswerIdEqualTo(id);
+            deleted = answerMapper.deleteByExample(ex);
+            // 删除关联评论 (target_type=1 for answer)
+            ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
+            cEx.createCriteria().andTargetIdEqualTo(id).andTargetTypeEqualTo((byte) 1);
+            commentMapper.deleteByExample(cEx);
+        } else if ("zhihu".equals(source) && "article".equals(type)) {
+            ZhihuArticleDOExample ex = new ZhihuArticleDOExample();
+            ex.createCriteria().andArticleIdEqualTo(id);
+            deleted = articleMapper.deleteByExample(ex);
+            // 删除关联评论 (target_type=2 for article)
+            ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
+            cEx.createCriteria().andTargetIdEqualTo(id).andTargetTypeEqualTo((byte) 2);
+            commentMapper.deleteByExample(cEx);
+        } else if ("zhihu".equals(source) && "pin".equals(type)) {
+            ZhihuPinDOExample ex = new ZhihuPinDOExample();
+            ex.createCriteria().andPinIdEqualTo(id);
+            deleted = pinMapper.deleteByExample(ex);
+        } else if ("guba".equals(source) && "post".equals(type)) {
+            GubaPostDOExample ex = new GubaPostDOExample();
+            ex.createCriteria().andPostIdEqualTo(id);
+            deleted = gubaPostMapper.deleteByExample(ex);
+        }
+
+        // 删除关联AI分析结果
+        AiAnalysisDOExample aiEx = new AiAnalysisDOExample();
+        aiEx.createCriteria().andSourceEqualTo(source).andTargetIdEqualTo(id).andTargetTypeEqualTo(type);
+        int aiDeleted = aiAnalysisMapper.deleteByExample(aiEx);
+
+        return Map.of("deleted", deleted > 0, "aiAnalysisDeleted", aiDeleted);
     }
 
     private boolean isAnalyzed(String source, Long targetId, String targetType) {

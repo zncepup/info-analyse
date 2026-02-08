@@ -60,6 +60,25 @@ CREATE TABLE IF NOT EXISTS zhihu_comment (
     INDEX idx_parent (parent_comment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知乎评论';
 
+-- 知乎想法
+CREATE TABLE IF NOT EXISTS zhihu_pin (
+    id              BIGINT          AUTO_INCREMENT PRIMARY KEY,
+    pin_id          BIGINT          NOT NULL COMMENT '知乎想法ID',
+    author_name     VARCHAR(100)    COMMENT '作者昵称',
+    author_id       VARCHAR(100)    COMMENT '作者ID',
+    content         MEDIUMTEXT      COMMENT '纯文本内容',
+    html_content    MEDIUMTEXT      COMMENT 'HTML原始内容',
+    like_count      INT DEFAULT 0   COMMENT '点赞数',
+    comment_count   INT DEFAULT 0   COMMENT '评论数',
+    repin_count     INT DEFAULT 0   COMMENT '转发数',
+    url             VARCHAR(500)    COMMENT '原文链接',
+    created_time    DATETIME        COMMENT '想法创建时间',
+    updated_time    DATETIME        COMMENT '想法修改时间',
+    crawl_time      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '抓取时间',
+    UNIQUE KEY uk_pin_id (pin_id),
+    INDEX idx_author_id (author_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知乎想法';
+
 -- 股吧帖子
 CREATE TABLE IF NOT EXISTS guba_post (
     id              BIGINT          AUTO_INCREMENT PRIMARY KEY,

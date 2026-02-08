@@ -57,6 +57,10 @@ public class TaskService {
     }
 
     public TaskInfo submit(String type, String title, Map<String, Object> params, TaskRunner runner) {
+        return submit(type, title, params, (task) -> runner.run());
+    }
+
+    public TaskInfo submit(String type, String title, Map<String, Object> params, ProgressTaskRunner runner) {
         String id = UUID.randomUUID().toString();
         TaskInfo task = new TaskInfo(id, type, title, params, System.currentTimeMillis());
         tasks.put(id, task);
@@ -69,7 +73,7 @@ public class TaskService {
             task.markRunning();
             updateDbStatus(task);
             try {
-                String result = runner.run();
+                String result = runner.run(task);
                 task.markCompleted(result);
             } catch (Exception e) {
                 task.markFailed(e.getMessage() == null ? "Task failed" : e.getMessage());
@@ -161,5 +165,10 @@ public class TaskService {
     @FunctionalInterface
     public interface TaskRunner {
         String run();
+    }
+
+    @FunctionalInterface
+    public interface ProgressTaskRunner {
+        String run(TaskInfo task);
     }
 }
