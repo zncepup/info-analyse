@@ -298,13 +298,13 @@ public class MarkdownViewController {
             }
         }
 
-        // 过滤：只显示投资相关(invest_related=1)或未分类(null)的根评论线程
+        // 过滤：只显示投资相关(invest_related=1)的根评论线程
         java.util.List<ZhihuCommentDO> filteredRoots = new java.util.ArrayList<>();
         int filteredCommentCount = 0;
         for (ZhihuCommentDO root : roots) {
-            if (root.getInvestRelated() == null || root.getInvestRelated() == 1) {
+            if (root.getInvestRelated() != null && root.getInvestRelated() == 1) {
                 filteredRoots.add(root);
-                filteredCommentCount++; // root itself
+                filteredCommentCount++;
                 java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
                 if (children != null) filteredCommentCount += children.size();
             }
@@ -313,11 +313,7 @@ public class MarkdownViewController {
 
         html.append("<div class=\"comment-section\">");
         html.append("<div class=\"comment-toggle\" onclick=\"this.parentElement.classList.toggle('open')\">");
-        if (filteredCommentCount < comments.size()) {
-            html.append("<span>投资相关评论 (").append(filteredCommentCount).append("/").append(comments.size()).append(")</span>");
-        } else {
-            html.append("<span>作者互动评论 (").append(comments.size()).append(")</span>");
-        }
+        html.append("<span>投资相关评论 (").append(filteredCommentCount).append("/").append(comments.size()).append(")</span>");
         html.append("<svg class=\"chevron\" width=\"12\" height=\"8\" viewBox=\"0 0 12 8\" fill=\"none\"><path d=\"M1 1.5L6 6.5L11 1.5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>");
         html.append("</div>");
         html.append("<div class=\"comment-body\">");
@@ -396,6 +392,13 @@ public class MarkdownViewController {
         List<AiAnalysisDO> analyses = aiAnalysisMapper.selectByExampleWithBLOBs(aExample);
         if (analyses.isEmpty()) return;
 
+        // 排序：正文分析(investment_clue)在前，评论分析(comment_investment_clue)在后
+        analyses.sort((a, b) -> {
+            boolean aIsComment = "comment_investment_clue".equals(a.getAnalysisType());
+            boolean bIsComment = "comment_investment_clue".equals(b.getAnalysisType());
+            return Boolean.compare(aIsComment, bIsComment);
+        });
+
         for (AiAnalysisDO a : analyses) {
             boolean isCommentAnalysis = "comment_investment_clue".equals(a.getAnalysisType());
             String label = isCommentAnalysis ? "AI 评论分析" : "AI 分析";
@@ -407,20 +410,12 @@ public class MarkdownViewController {
             html.append("</div>");
             html.append("<div class=\"comment-body\">");
 
-            // 如果是评论分析，先展示投资相关的评论原文（可折叠）
-            if (isCommentAnalysis) {
-                appendCommentSourceHtml(html, targetId, targetType);
-            }
-
             html.append("<div class=\"ai-content\">");
             html.append(renderMarkdown(safe(a.getResult())));
             html.append("</div></div></div>");
         }
     }
 
-    /**
-     * 在评论AI分析结果前，展示被分析的投资相关评论原文
-     */
     private void appendCommentSourceHtml(StringBuilder html, Long targetId, String targetType) {
         byte commentTargetType;
         if ("answer".equals(targetType)) commentTargetType = 1;
@@ -437,7 +432,6 @@ public class MarkdownViewController {
         List<ZhihuCommentDO> investComments = commentMapper.selectByExampleWithBLOBs(cEx);
         if (investComments.isEmpty()) return;
 
-        // 分组
         java.util.Map<Long, ZhihuCommentDO> cMap = new java.util.LinkedHashMap<>();
         for (ZhihuCommentDO c : investComments) cMap.put(c.getCommentId(), c);
         java.util.List<ZhihuCommentDO> roots = new java.util.ArrayList<>();
@@ -479,7 +473,7 @@ public class MarkdownViewController {
         if (hasComments) {
             html.append("<button class=\"action-btn\" onclick=\"doAction(this,'/api/zhihu/re-crawl-comments',{source:'")
                 .append(source).append("',targetId:'").append(targetId).append("',targetType:'").append(targetType)
-                .append("'},'重爬评论')\">重爬评论</button>");
+                .append("'},'同步增量评论')\">同步增量评论</button>");
         }
         html.append("<button class=\"action-btn\" onclick=\"doAction(this,'/api/zhihu/re-analyze',{source:'")
             .append(source).append("',targetId:'").append(targetId).append("',targetType:'").append(targetType)
@@ -702,6 +696,27 @@ public class MarkdownViewController {
                 + "      .then(function(r){if(!r.ok) throw new Error('删除失败'); showActionToast('已删除'); setTimeout(function(){location.href='/';},800);})\n"
                 + "      .catch(function(e){showActionToast(e.message); btn.disabled=false; btn.textContent='删除';});\n"
                 + "  }\n"
+                + "  // 页内搜索：从URL参数q读取关键词，高亮并滚动到第一个匹配\n"
+                + "  (function(){\n"
+                + "    var q=new URLSearchParams(location.search).get('q');\n"
+                + "    if(!q)return;\n"
+                + "    var card=document.querySelector('.reader-card');\n"
+                + "    if(!card)return;\n"
+                + "    var walker=document.createTreeWalker(card,NodeFilter.SHOW_TEXT,null,false);\n"
+                + "    var nodes=[],node;\n"
+                + "    while(node=walker.nextNode()) nodes.push(node);\n"
+                + "    var first=null;\n"
+                + "    var re=new RegExp('('+q.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')+')','gi');\n"
+                + "    nodes.forEach(function(n){\n"
+                + "      if(!re.test(n.textContent)){re.lastIndex=0;return;}\n"
+                + "      re.lastIndex=0;\n"
+                + "      var span=document.createElement('span');\n"
+                + "      span.innerHTML=n.textContent.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(re,'<mark style=\"background:#FF950040;padding:0 1px;border-radius:2px\">$1</mark>');\n"
+                + "      n.parentNode.replaceChild(span,n);\n"
+                + "      if(!first)first=span.querySelector('mark');\n"
+                + "    });\n"
+                + "    if(first)setTimeout(function(){first.scrollIntoView({behavior:'smooth',block:'center'});},300);\n"
+                + "  })();\n"
                 + "  </script>\n"
                 + "</body>\n"
                 + "</html>\n";
@@ -709,6 +724,7 @@ public class MarkdownViewController {
         content = replaceZhihuEmoji(content);
         return header.replace("__TITLE__", escape(title)) + content + footer;
     }
+
 
     /** 将知乎表情标记 [xxx] 替换为 Unicode emoji */
     private String replaceZhihuEmoji(String text) {

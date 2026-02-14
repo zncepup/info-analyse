@@ -426,7 +426,25 @@
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3.5 10a6.5 6.5 0 0 1 11.48-4.16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 10a6.5 6.5 0 0 1-11.48 4.16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M15 3v3h-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 17v-3h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
+    <!-- Search Bar -->
+    <div id="search-bar" style="padding:8px 0">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="search-input" placeholder="搜索文章、评论、AI分析..." style="flex:1;height:36px;font-size:14px;border-radius:10px;background:var(--fill-tertiary)">
+        <button class="ios-btn ios-btn-plain ios-btn-sm" onclick="doSearch()" style="flex-shrink:0">搜索</button>
+      </div>
+    </div>
   </header>
+
+  <!-- ===== Search Results (hidden by default) ===== -->
+  <section class="section" id="search-section" style="display:none">
+    <div class="section-header">
+      <span id="search-result-title">搜索结果</span>
+      <button class="section-action" onclick="closeSearch()">关闭</button>
+    </div>
+    <div class="card">
+      <ul class="list" id="search-results"></ul>
+    </div>
+  </section>
 
   <!-- ===== Login Status ===== -->
   <section class="section" id="login-section">
@@ -942,6 +960,70 @@ $('sync-form').addEventListener('submit', async (e) => {
 });
 
 authorSelect.addEventListener('change', (e) => refreshFiles(e.target.value));
+
+// Search
+const searchInput = $('search-input');
+const searchResults = $('search-results');
+const searchSection = $('search-section');
+
+searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+
+const doSearch = async () => {
+  const q = searchInput.value.trim();
+  if (!q) { showToast('请输入搜索关键词'); return; }
+  searchResults.innerHTML = '<li class="list-cell empty">搜索中...</li>';
+  searchSection.style.display = '';
+  searchSection.scrollIntoView({behavior:'smooth'});
+  try {
+    const data = await fetchJson('/api/search?q=' + encodeURIComponent(q) + '&limit=50');
+    $('search-result-title').textContent = '搜索结果 (' + data.total + ')';
+    if (!data.results.length) {
+      searchResults.innerHTML = '<li class="list-cell empty">未找到匹配内容</li>';
+      return;
+    }
+    searchResults.innerHTML = '';
+    const typeLabels = {answer:'回答',article:'文章',pin:'想法',comment:'评论',guba_post:'股吧帖子',guba_comment:'股吧评论',ai_analysis:'AI分析'};
+    const hl = (text) => {
+      if (!text) return '';
+      const s = text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return s.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), m => '<mark style="background:var(--orange-bg);color:var(--orange);padding:0 2px;border-radius:3px">'+m+'</mark>');
+    };
+    data.results.forEach(r => {
+      const li = document.createElement('li');
+      li.className = 'list-cell file-cell';
+      let html = '<div class="file-head"><div class="file-info">'
+        + '<a href="' + (r.link||'#') + '?q=' + encodeURIComponent(q) + '" class="file-link">' + (r.title ? hl(r.title) : '(内容)') + '</a>'
+        + '<div class="file-meta">'
+        + '<span class="tag tag-ok" style="margin-right:6px">' + (typeLabels[r.type]||r.type) + '</span>'
+        + (r.authorName ? r.authorName + ' · ' : '')
+        + (r.time ? new Date(r.time).toLocaleDateString('zh-CN') : '')
+        + '</div>';
+      if (r.snippet) {
+        html += '<div style="font-size:13px;color:var(--label-secondary);margin-top:4px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + hl(r.snippet) + '</div>';
+      }
+      // 子匹配（评论、AI分析）
+      if (r.matches && r.matches.length) {
+        html += '<div style="margin-top:8px;padding:8px 10px;background:var(--system-bg);border-radius:8px">';
+        r.matches.forEach(m => {
+          html += '<div style="font-size:13px;margin-bottom:6px">'
+            + '<span class="tag" style="background:var(--fill-tertiary);color:var(--label-secondary);margin-right:4px">' + (typeLabels[m.type]||m.type) + '</span>'
+            + (m.authorName ? '<span style="color:var(--label-tertiary)">' + m.authorName + '</span> ' : '')
+            + '<div style="color:var(--label-secondary);margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + hl(m.snippet) + '</div>'
+            + '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div></div>';
+      li.innerHTML = html;
+      searchResults.appendChild(li);
+    });
+  } catch(e) { searchResults.innerHTML = '<li class="list-cell empty">搜索失败: '+e.message+'</li>'; }
+};
+
+const closeSearch = () => {
+  searchSection.style.display = 'none';
+  searchResults.innerHTML = '';
+};
 
 const refreshAll = () => { refreshStatus(); refreshAuthors(); refreshTasks(); refreshOutputs(); };
 

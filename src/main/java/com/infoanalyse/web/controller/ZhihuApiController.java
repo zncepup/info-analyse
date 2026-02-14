@@ -158,7 +158,7 @@ public class ZhihuApiController {
         require(request.targetId, "targetId is required");
         Long targetId = Long.parseLong(request.targetId);
         Map<String, Object> params = Map.of("source", request.source, "targetId", targetId, "targetType", request.targetType);
-        return taskService.submit("re-crawl-comments", "重新爬取评论", params,
+        return taskService.submit("re-crawl-comments", "同步增量评论", params,
                 () -> zhihuCommand.reCrawlComments(request.source, targetId, request.targetType));
     }
 

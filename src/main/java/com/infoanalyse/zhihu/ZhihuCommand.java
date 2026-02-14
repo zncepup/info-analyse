@@ -852,7 +852,7 @@ public class ZhihuCommand {
     }
 
     /**
-     * 重新爬取评论：删除旧评论后重新抓取
+     * 同步增量评论：重新爬取，只新增不删除
      */
     public String reCrawlComments(String source, Long targetId, String targetType) {
         try {
@@ -892,12 +892,12 @@ public class ZhihuCommand {
             }
 
             // 删除旧评论
+            // 统计已有评论数
             ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
             cEx.createCriteria().andTargetIdEqualTo(targetId).andTargetTypeEqualTo(commentTargetType);
-            int deleted = commentMapper.deleteByExample(cEx);
-            System.out.println("已删除旧评论 " + deleted + " 条");
+            long existingCount = commentMapper.countByExample(cEx);
 
-            // 重新爬取
+            // 增量爬取
             List<ZhihuComment> comments;
             if ("answer".equals(targetType)) {
                 comments = zhihuBrowserCrawlerService.crawlAnswerComments(contentId, authorId);
@@ -906,19 +906,22 @@ public class ZhihuCommand {
             } else {
                 comments = zhihuBrowserCrawlerService.crawlPinComments(contentId, authorId);
             }
-            System.out.println("重新爬取到 " + comments.size() + " 条评论");
+            System.out.println("爬取到 " + comments.size() + " 条评论，已有 " + existingCount + " 条");
 
-            // 保存
+            // 增量保存（只新增，不删除）
             java.time.LocalDateTime now = java.time.LocalDateTime.now();
             for (ZhihuComment c : comments) {
                 zhihuDbSaveService.saveCommentPublic(c, targetId, commentTargetType, now);
             }
-            System.out.println("评论已保存到数据库");
 
-            return "重新爬取评论完成，共 " + comments.size() + " 条";
+            // 统计新增数
+            long newCount = commentMapper.countByExample(cEx) - existingCount;
+            System.out.println("新增评论 " + newCount + " 条");
+
+            return "同步增量评论完成，爬取 " + comments.size() + " 条，新增 " + newCount + " 条";
         } catch (Exception e) {
             e.printStackTrace();
-            return "重新爬取评论失败: " + e.getMessage();
+            return "同步增量评论失败: " + e.getMessage();
         }
     }
 

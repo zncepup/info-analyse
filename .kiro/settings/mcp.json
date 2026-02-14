@@ -18,7 +18,8 @@
         "playwright_console_logs",
         "playwright_post",
         "playwright_get",
-        "playwright_resize"
+        "playwright_resize",
+        "playwright_fill"
       ]
     }
   }

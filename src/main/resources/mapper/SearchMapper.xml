@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.infoanalyse.dao.mapper.SearchMapper">
+
+  <select id="searchAll" resultType="java.util.LinkedHashMap">
+    (
+      SELECT 'answer' AS type, answer_id AS targetId, question_title AS title,
+             SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
+             '/view/zhihu/answer/' AS linkPrefix, created_time AS time
+      FROM zhihu_answer
+      WHERE question_title LIKE CONCAT('%', #{keyword}, '%')
+         OR content LIKE CONCAT('%', #{keyword}, '%')
+      ORDER BY created_time DESC
+      LIMIT #{limit}
+    )
+    UNION ALL
+    (
+      SELECT 'article' AS type, article_id AS targetId, title AS title,
+             SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
+             '/view/zhihu/article/' AS linkPrefix, created_time AS time
+      FROM zhihu_article
+      WHERE title LIKE CONCAT('%', #{keyword}, '%')
+         OR content LIKE CONCAT('%', #{keyword}, '%')
+      ORDER BY created_time DESC
+      LIMIT #{limit}
+    )
+    UNION ALL
+    (
+      SELECT 'pin' AS type, pin_id AS targetId, '想法' AS title,
+             SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
+             '/view/zhihu/pin/' AS linkPrefix, created_time AS time
+      FROM zhihu_pin
+      WHERE content LIKE CONCAT('%', #{keyword}, '%')
+      ORDER BY created_time DESC
+      LIMIT #{limit}
+    )
+    UNION ALL
+    (
+      SELECT 'comment' AS type, c.target_id AS targetId,
+             CONCAT('评论 @', c.author_name) AS title,
+             SUBSTRING(c.content, 1, 200) AS snippet, c.author_name AS authorName,
+             CASE c.target_type
+               WHEN 1 THEN '/view/zhihu/answer/'
+               WHEN 2 THEN '/view/zhihu/article/'
+               WHEN 3 THEN '/view/zhihu/pin/'
+             END AS linkPrefix,
+             c.created_time AS time
+      FROM zhihu_comment c
+      WHERE c.content LIKE CONCAT('%', #{keyword}, '%')
+      ORDER BY c.created_time DESC
+      LIMIT #{limit}
+    )
+    UNION ALL
+    (
+      SELECT 'guba_post' AS type, post_id AS targetId, title AS title,
+             SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
+             '/view/guba/post/' AS linkPrefix, publish_time AS time
+      FROM guba_post
+      WHERE title LIKE CONCAT('%', #{keyword}, '%')
+         OR content LIKE CONCAT('%', #{keyword}, '%')
+      ORDER BY publish_time DESC
+      LIMIT #{limit}
+    )
+    UNION ALL
+    (
+      SELECT 'guba_comment' AS type, c.post_id AS targetId,
+             CONCAT('股吧评论 @', c.author_name) AS title,
+             SUBSTRING(c.content, 1, 200) AS snippet, c.author_name AS authorName,
+             '/view/guba/post/' AS linkPrefix,
+             c.publish_time AS time
+      FROM guba_comment c
+      WHERE c.content LIKE CONCAT('%', #{keyword}, '%')
+      ORDER BY c.publish_time DESC
+      LIMIT #{limit}
+    )
+    UNION ALL
+    (
+      SELECT 'ai_analysis' AS type, a.target_id AS targetId,
+             CONCAT('AI分析 (', a.analysis_type, ')') AS title,
+             SUBSTRING(a.result, 1, 200) AS snippet, a.ai_model AS authorName,
+             CASE a.target_type
+               WHEN 'answer' THEN '/view/zhihu/answer/'
+               WHEN 'article' THEN '/view/zhihu/article/'
+               WHEN 'pin' THEN '/view/zhihu/pin/'
+               WHEN 'post' THEN '/view/guba/post/'
+             END AS linkPrefix,
+             a.created_time AS time
+      FROM ai_analysis a
+      WHERE a.result LIKE CONCAT('%', #{keyword}, '%')
+        AND a.status = 'COMPLETED'
+      ORDER BY a.created_time DESC
+      LIMIT #{limit}
+    )
+    ORDER BY time DESC
+  </select>
+
+  <select id="findContentTitle" resultType="java.util.LinkedHashMap">
+    <choose>
+      <when test="type == 'answer'">
+        SELECT question_title AS title, author_name AS authorName, created_time AS time
+        FROM zhihu_answer WHERE answer_id = #{targetId} LIMIT 1
+      </when>
+      <when test="type == 'article'">
+        SELECT title, author_name AS authorName, created_time AS time
+        FROM zhihu_article WHERE article_id = #{targetId} LIMIT 1
+      </when>
+      <when test="type == 'pin'">
+        SELECT SUBSTRING(content, 1, 50) AS title, author_name AS authorName, created_time AS time
+        FROM zhihu_pin WHERE pin_id = #{targetId} LIMIT 1
+      </when>
+      <when test="type == 'guba_post'">
+        SELECT title, author_name AS authorName, publish_time AS time
+        FROM guba_post WHERE post_id = #{targetId} LIMIT 1
+      </when>
+      <otherwise>
+        SELECT NULL AS title, NULL AS authorName, NULL AS time FROM DUAL WHERE 1=0
+      </otherwise>
+    </choose>
+  </select>
+
+</mapper>
