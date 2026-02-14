@@ -1086,6 +1086,159 @@ public class ZhihuCommand {
         }
     }
 
+    /**
+     * 批量分类所有未分类的评论（仅分类，不做AI分析）
+     */
+    public String classifyAllUnclassifiedComments(com.infoanalyse.web.task.TaskInfo taskInfo) {
+        try {
+            if (!deepSeekService.isAvailable()) {
+                return "DeepSeek API 未配置";
+            }
+
+            // 查询所有有未分类评论的 target 组合
+            ZhihuCommentDOExample allEx = new ZhihuCommentDOExample();
+            allEx.createCriteria().andInvestRelatedIsNull();
+            List<ZhihuCommentDO> unclassified = commentMapper.selectByExample(allEx);
+            if (unclassified.isEmpty()) return "没有未分类的评论";
+
+            // 按 (targetId, targetType) 分组
+            java.util.Map<String, java.util.List<ZhihuCommentDO>> groups = new java.util.LinkedHashMap<>();
+            for (ZhihuCommentDO c : unclassified) {
+                String key = c.getTargetId() + ":" + c.getTargetType();
+                groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(c);
+            }
+
+            int totalTargets = groups.size();
+            int totalComments = unclassified.size();
+            System.out.println("共 " + totalTargets + " 个目标，" + totalComments + " 条未分类评论");
+            if (taskInfo != null) taskInfo.setTotalSteps(totalTargets);
+
+            int doneTargets = 0;
+            int classifiedCount = 0;
+            int failedTargets = 0;
+
+            for (var entry : groups.entrySet()) {
+                String[] parts = entry.getKey().split(":");
+                Long targetId = Long.parseLong(parts[0]);
+                byte targetType = Byte.parseByte(parts[1]);
+                String targetTypeStr = targetType == 1 ? "answer" : targetType == 2 ? "article" : "pin";
+
+                doneTargets++;
+                String stepLabel = "[" + doneTargets + "/" + totalTargets + "] " + targetTypeStr + "/" + targetId;
+                System.out.println(stepLabel + " (" + entry.getValue().size() + " 条未分类)");
+                if (taskInfo != null) taskInfo.stepStart(stepLabel);
+
+                try {
+                    // 查询该目标下所有评论
+                    ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
+                    cEx.createCriteria().andTargetIdEqualTo(targetId).andTargetTypeEqualTo(targetType);
+                    cEx.setOrderByClause("created_time ASC");
+                    List<ZhihuCommentDO> comments = commentMapper.selectByExampleWithBLOBs(cEx);
+
+                    // 构建评论树
+                    java.util.Map<Long, ZhihuCommentDO> commentMap = new java.util.LinkedHashMap<>();
+                    for (ZhihuCommentDO c : comments) commentMap.put(c.getCommentId(), c);
+
+                    java.util.List<ZhihuCommentDO> roots = new java.util.ArrayList<>();
+                    java.util.Map<Long, java.util.List<ZhihuCommentDO>> childrenMap = new java.util.LinkedHashMap<>();
+                    for (ZhihuCommentDO c : comments) {
+                        if (c.getParentCommentId() == null || !commentMap.containsKey(c.getParentCommentId())) {
+                            roots.add(c);
+                        } else {
+                            childrenMap.computeIfAbsent(c.getParentCommentId(), k -> new java.util.ArrayList<>()).add(c);
+                        }
+                    }
+
+                    // 只对未分类的根评论做分类
+                    java.util.List<ZhihuCommentDO> unclassifiedRoots = new java.util.ArrayList<>();
+                    for (ZhihuCommentDO root : roots) {
+                        if (root.getInvestRelated() == null) {
+                            unclassifiedRoots.add(root);
+                        }
+                    }
+
+                    if (!unclassifiedRoots.isEmpty()) {
+                        java.util.Map<Integer, String> threadTexts = new java.util.LinkedHashMap<>();
+                        java.util.Map<Integer, ZhihuCommentDO> threadRoots = new java.util.LinkedHashMap<>();
+                        int idx = 1;
+                        for (ZhihuCommentDO root : unclassifiedRoots) {
+                            StringBuilder threadText = new StringBuilder();
+                            threadText.append(stripHtml(root.getContent()));
+                            java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+                            if (children != null) {
+                                for (ZhihuCommentDO child : children) {
+                                    threadText.append("\n").append(stripHtml(child.getContent()));
+                                }
+                            }
+                            threadTexts.put(idx, threadText.toString());
+                            threadRoots.put(idx, root);
+                            idx++;
+                        }
+
+                        // 分批调用（每批最多50个线程）
+                        int batchSize = 50;
+                        java.util.List<Integer> keys = new java.util.ArrayList<>(threadTexts.keySet());
+                        for (int i = 0; i < keys.size(); i += batchSize) {
+                            java.util.Map<Integer, String> batch = new java.util.LinkedHashMap<>();
+                            int end = Math.min(i + batchSize, keys.size());
+                            java.util.Map<Integer, Integer> reindex = new java.util.LinkedHashMap<>();
+                            int newIdx = 1;
+                            for (int j = i; j < end; j++) {
+                                batch.put(newIdx, threadTexts.get(keys.get(j)));
+                                reindex.put(newIdx, keys.get(j));
+                                newIdx++;
+                            }
+
+                            java.util.Map<Integer, Boolean> classification = deepSeekService.classifyCommentRelevance(batch);
+
+                            for (var ce : classification.entrySet()) {
+                                Integer origKey = reindex.get(ce.getKey());
+                                if (origKey == null) continue;
+                                ZhihuCommentDO root = threadRoots.get(origKey);
+                                if (root == null) continue;
+                                byte val = (byte) (ce.getValue() ? 1 : 0);
+
+                                ZhihuCommentDO update = new ZhihuCommentDO();
+                                update.setId(root.getId());
+                                update.setInvestRelated(val);
+                                commentMapper.updateByPrimaryKeySelective(update);
+
+                                java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+                                if (children != null) {
+                                    for (ZhihuCommentDO child : children) {
+                                        ZhihuCommentDO cu = new ZhihuCommentDO();
+                                        cu.setId(child.getId());
+                                        cu.setInvestRelated(val);
+                                        commentMapper.updateByPrimaryKeySelective(cu);
+                                    }
+                                }
+                                classifiedCount++;
+                            }
+
+                            if (i + batchSize < keys.size()) {
+                                Thread.sleep(1000);
+                            }
+                        }
+                    }
+
+                    if (taskInfo != null) taskInfo.stepDone("✓ " + stepLabel);
+                } catch (Exception e) {
+                    failedTargets++;
+                    System.out.println("  ✗ 分类失败: " + e.getMessage());
+                    if (taskInfo != null) taskInfo.stepDone("✗ " + stepLabel + " 失败: " + e.getMessage());
+                }
+            }
+
+            String result = "批量分类完成: " + doneTargets + " 个目标, " + classifiedCount + " 个线程已分类"
+                    + (failedTargets > 0 ? ", " + failedTargets + " 个失败" : "");
+            System.out.println(result);
+            return result;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "批量分类失败: " + e.getMessage();
+        }
+    }
+
     private String stripHtml(String html) {
         if (html == null || html.isEmpty()) return "";
         return html.replaceAll("<[^>]+>", "").replace("&nbsp;", " ")

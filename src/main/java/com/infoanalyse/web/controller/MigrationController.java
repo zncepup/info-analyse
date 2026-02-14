@@ -4,6 +4,7 @@ import com.infoanalyse.dao.mapper.*;
 import com.infoanalyse.dao.model.*;
 import com.infoanalyse.web.task.TaskInfo;
 import com.infoanalyse.web.task.TaskService;
+import com.infoanalyse.zhihu.ZhihuCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -37,6 +38,7 @@ public class MigrationController {
     private final GubaPostDOMapper gubaPostMapper;
     private final GubaCommentDOMapper gubaCommentMapper;
     private final AiAnalysisDOMapper aiAnalysisMapper;
+    private final ZhihuCommand zhihuCommand;
 
     public MigrationController(TaskService taskService,
                                ZhihuAnswerDOMapper answerMapper,
@@ -44,7 +46,8 @@ public class MigrationController {
                                ZhihuCommentDOMapper commentMapper,
                                GubaPostDOMapper gubaPostMapper,
                                GubaCommentDOMapper gubaCommentMapper,
-                               AiAnalysisDOMapper aiAnalysisMapper) {
+                               AiAnalysisDOMapper aiAnalysisMapper,
+                               ZhihuCommand zhihuCommand) {
         this.taskService = taskService;
         this.answerMapper = answerMapper;
         this.articleMapper = articleMapper;
@@ -52,6 +55,7 @@ public class MigrationController {
         this.gubaPostMapper = gubaPostMapper;
         this.gubaCommentMapper = gubaCommentMapper;
         this.aiAnalysisMapper = aiAnalysisMapper;
+        this.zhihuCommand = zhihuCommand;
     }
 
     @PostMapping
@@ -77,6 +81,12 @@ public class MigrationController {
             return String.format("迁移完成: %d 条回答, %d 篇文章, %d 条股吧帖子, %d 条AI分析",
                     counts[0], counts[1], counts[2], counts[3]);
         });
+    }
+
+    @PostMapping("/classify-comments")
+    public TaskInfo classifyComments() {
+        return taskService.submit("classify-comments", "批量分类历史评论（投资相关性）", Map.of(),
+                (task) -> zhihuCommand.classifyAllUnclassifiedComments(task));
     }
 
     // ========== 知乎目录迁移 ==========
