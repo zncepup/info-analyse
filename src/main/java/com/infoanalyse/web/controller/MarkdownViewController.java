@@ -125,9 +125,18 @@ public class MarkdownViewController {
         if (answer.getUrl() != null) md.append("- **原文链接**: [链接](").append(answer.getUrl()).append(")\n");
         if (answer.getCreatedTime() != null) md.append("- **创建时间**: ").append(answer.getCreatedTime()).append("\n");
         md.append("---\n\n");
-        md.append(safe(answer.getContent())).append("\n\n");
 
-        String html = renderMarkdown(md.toString());
+        String headerHtml = renderMarkdown(md.toString());
+
+        String bodyHtml;
+        String htmlContent = answer.getHtmlContent();
+        if (htmlContent != null && !htmlContent.isBlank()) {
+            bodyHtml = sanitizeContentHtml(htmlContent);
+        } else {
+            bodyHtml = renderMarkdown(safe(answer.getContent()));
+        }
+
+        String html = headerHtml + bodyHtml;
         html = adjustImagePaths(html, safe(answer.getAuthorName()));
 
         StringBuilder extra = new StringBuilder();
@@ -156,9 +165,18 @@ public class MarkdownViewController {
         if (article.getUrl() != null) md.append("- **原文链接**: [链接](").append(article.getUrl()).append(")\n");
         if (article.getCreatedTime() != null) md.append("- **创建时间**: ").append(article.getCreatedTime()).append("\n");
         md.append("---\n\n");
-        md.append(safe(article.getContent())).append("\n\n");
 
-        String html = renderMarkdown(md.toString());
+        String headerHtml = renderMarkdown(md.toString());
+
+        String bodyHtml;
+        String htmlContent = article.getHtmlContent();
+        if (htmlContent != null && !htmlContent.isBlank()) {
+            bodyHtml = sanitizeContentHtml(htmlContent);
+        } else {
+            bodyHtml = renderMarkdown(safe(article.getContent()));
+        }
+
+        String html = headerHtml + bodyHtml;
         html = adjustImagePaths(html, safe(article.getAuthorName()));
 
         StringBuilder extra = new StringBuilder();
@@ -280,14 +298,31 @@ public class MarkdownViewController {
             }
         }
 
+        // 过滤：只显示投资相关(invest_related=1)或未分类(null)的根评论线程
+        java.util.List<ZhihuCommentDO> filteredRoots = new java.util.ArrayList<>();
+        int filteredCommentCount = 0;
+        for (ZhihuCommentDO root : roots) {
+            if (root.getInvestRelated() == null || root.getInvestRelated() == 1) {
+                filteredRoots.add(root);
+                filteredCommentCount++; // root itself
+                java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+                if (children != null) filteredCommentCount += children.size();
+            }
+        }
+        if (filteredRoots.isEmpty()) return;
+
         html.append("<div class=\"comment-section\">");
         html.append("<div class=\"comment-toggle\" onclick=\"this.parentElement.classList.toggle('open')\">");
-        html.append("<span>作者互动评论 (").append(comments.size()).append(")</span>");
+        if (filteredCommentCount < comments.size()) {
+            html.append("<span>投资相关评论 (").append(filteredCommentCount).append("/").append(comments.size()).append(")</span>");
+        } else {
+            html.append("<span>作者互动评论 (").append(comments.size()).append(")</span>");
+        }
         html.append("<svg class=\"chevron\" width=\"12\" height=\"8\" viewBox=\"0 0 12 8\" fill=\"none\"><path d=\"M1 1.5L6 6.5L11 1.5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>");
         html.append("</div>");
         html.append("<div class=\"comment-body\">");
 
-        for (ZhihuCommentDO root : roots) {
+        for (ZhihuCommentDO root : filteredRoots) {
             html.append("<div class=\"comment-thread\">");
             appendSingleCommentHtml(html, root, null);
             java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
@@ -362,15 +397,81 @@ public class MarkdownViewController {
         if (analyses.isEmpty()) return;
 
         for (AiAnalysisDO a : analyses) {
+            boolean isCommentAnalysis = "comment_investment_clue".equals(a.getAnalysisType());
+            String label = isCommentAnalysis ? "AI 评论分析" : "AI 分析";
+
             html.append("<div class=\"comment-section open\">");
             html.append("<div class=\"comment-toggle\" onclick=\"this.parentElement.classList.toggle('open')\">");
-            html.append("<span>AI 分析 (").append(escape(safe(a.getAiModel()))).append(")</span>");
+            html.append("<span>").append(label).append(" (").append(escape(safe(a.getAiModel()))).append(")</span>");
             html.append("<svg class=\"chevron\" width=\"12\" height=\"8\" viewBox=\"0 0 12 8\" fill=\"none\"><path d=\"M1 1.5L6 6.5L11 1.5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>");
             html.append("</div>");
-            html.append("<div class=\"comment-body\"><div class=\"ai-content\">");
+            html.append("<div class=\"comment-body\">");
+
+            // 如果是评论分析，先展示投资相关的评论原文（可折叠）
+            if (isCommentAnalysis) {
+                appendCommentSourceHtml(html, targetId, targetType);
+            }
+
+            html.append("<div class=\"ai-content\">");
             html.append(renderMarkdown(safe(a.getResult())));
             html.append("</div></div></div>");
         }
+    }
+
+    /**
+     * 在评论AI分析结果前，展示被分析的投资相关评论原文
+     */
+    private void appendCommentSourceHtml(StringBuilder html, Long targetId, String targetType) {
+        byte commentTargetType;
+        if ("answer".equals(targetType)) commentTargetType = 1;
+        else if ("article".equals(targetType)) commentTargetType = 2;
+        else if ("pin".equals(targetType)) commentTargetType = 3;
+        else return;
+
+        ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
+        cEx.createCriteria()
+                .andTargetIdEqualTo(targetId)
+                .andTargetTypeEqualTo(commentTargetType)
+                .andInvestRelatedEqualTo((byte) 1);
+        cEx.setOrderByClause("created_time ASC");
+        List<ZhihuCommentDO> investComments = commentMapper.selectByExampleWithBLOBs(cEx);
+        if (investComments.isEmpty()) return;
+
+        // 分组
+        java.util.Map<Long, ZhihuCommentDO> cMap = new java.util.LinkedHashMap<>();
+        for (ZhihuCommentDO c : investComments) cMap.put(c.getCommentId(), c);
+        java.util.List<ZhihuCommentDO> roots = new java.util.ArrayList<>();
+        java.util.Map<Long, java.util.List<ZhihuCommentDO>> childrenMap = new java.util.LinkedHashMap<>();
+        for (ZhihuCommentDO c : investComments) {
+            if (c.getParentCommentId() == null || !cMap.containsKey(c.getParentCommentId())) {
+                roots.add(c);
+            } else {
+                childrenMap.computeIfAbsent(c.getParentCommentId(), k -> new java.util.ArrayList<>()).add(c);
+            }
+        }
+
+        html.append("<div class=\"comment-source-section\">");
+        html.append("<div class=\"comment-source-toggle\" onclick=\"this.parentElement.classList.toggle('source-open')\">");
+        html.append("<span>分析来源评论 (").append(investComments.size()).append("条)</span>");
+        html.append("<svg class=\"chevron\" width=\"10\" height=\"6\" viewBox=\"0 0 12 8\" fill=\"none\"><path d=\"M1 1.5L6 6.5L11 1.5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>");
+        html.append("</div>");
+        html.append("<div class=\"comment-source-body\">");
+
+        for (ZhihuCommentDO root : roots) {
+            html.append("<div class=\"comment-thread\">");
+            appendSingleCommentHtml(html, root, null);
+            java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+            if (children != null) {
+                html.append("<div class=\"comment-replies\">");
+                for (ZhihuCommentDO child : children) {
+                    appendSingleCommentHtml(html, child, child.getReplyToAuthor());
+                }
+                html.append("</div>");
+            }
+            html.append("</div>");
+        }
+
+        html.append("</div></div>");
     }
 
     private void appendActionBar(StringBuilder html, String source, Long targetId, String targetType, boolean hasComments) {
@@ -407,193 +508,203 @@ public class MarkdownViewController {
     }
 
     private String wrapHtml(String title, String content) {
-        String header = """
-                <!doctype html>
-                <html lang="zh-CN">
-                <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-                  <meta name="apple-mobile-web-app-capable" content="yes">
-                  <title>__TITLE__</title>
-                  <style>
-                    :root {
-                      --system-bg: #F2F2F7;
-                      --grouped-bg: #FFFFFF;
-                      --label: #000000;
-                      --label-secondary: #3C3C43;
-                      --label-tertiary: #3C3C4399;
-                      --separator: #3C3C4336;
-                      --tint: #007AFF;
-                      --fill-tertiary: #7676801F;
-                      --safe-bottom: env(safe-area-inset-bottom, 0px);
-                    }
-                    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-                    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
-                    body {
-                      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-                                   "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
-                      font-size: 17px; line-height: 1.58;
-                      color: var(--label);
-                      background: var(--system-bg);
-                      -webkit-font-smoothing: antialiased;
-                      -webkit-tap-highlight-color: transparent;
-                    }
-                    .reader-nav {
-                      position: sticky; top: 0; z-index: 20;
-                      background: rgba(249,249,249,0.94);
-                      -webkit-backdrop-filter: saturate(180%) blur(20px);
-                      backdrop-filter: saturate(180%) blur(20px);
-                      border-bottom: 0.5px solid var(--separator);
-                    }
-                    .reader-nav-inner {
-                      max-width: 700px; margin: 0 auto;
-                      display: flex; align-items: center;
-                      height: 44px; padding: 0 16px; gap: 12px;
-                    }
-                    .back-btn {
-                      display: inline-flex; align-items: center; gap: 4px;
-                      color: var(--tint); text-decoration: none;
-                      font-size: 17px; font-weight: 400; padding: 4px 0;
-                    }
-                    .back-btn:active { opacity: 0.5; }
-                    .back-btn svg { flex-shrink: 0; }
-                    .nav-title-text {
-                      flex: 1; text-align: center;
-                      font-size: 17px; font-weight: 600; color: var(--label);
-                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-                      margin-right: 60px;
-                    }
-                    .reader-main {
-                      max-width: 700px; margin: 0 auto;
-                      padding: 16px 16px calc(32px + var(--safe-bottom));
-                    }
-                    .reader-card {
-                      background: var(--grouped-bg);
-                      border-radius: 12px; padding: 20px 18px; overflow: hidden;
-                    }
-                    .reader-card h1 { font-size: 22px; font-weight: 700; line-height: 1.3; margin-bottom: 16px; letter-spacing: -0.02em; }
-                    .reader-card h2 { font-size: 19px; font-weight: 700; line-height: 1.35; margin-top: 28px; margin-bottom: 10px; padding-top: 20px; border-top: 0.5px solid var(--separator); }
-                    .reader-card h2:first-child { border-top: none; padding-top: 0; margin-top: 0; }
-                    .reader-card h3 { font-size: 17px; font-weight: 600; line-height: 1.4; margin-top: 22px; margin-bottom: 8px; }
-                    .reader-card h4 { font-size: 15px; font-weight: 600; line-height: 1.4; margin-top: 18px; margin-bottom: 6px; color: var(--label-secondary); }
-                    .reader-card p { margin-bottom: 14px; font-size: 17px; line-height: 1.65; }
-                    .reader-card ul, .reader-card ol { margin-bottom: 14px; padding-left: 22px; }
-                    .reader-card li { margin-bottom: 6px; font-size: 17px; line-height: 1.58; }
-                    .reader-card img { max-width: 100%; height: auto; border-radius: 10px; margin: 12px 0; display: block; }
-                    .reader-card a { color: var(--tint); text-decoration: none; }
-                    .reader-card a:active { opacity: 0.5; }
-                    .reader-card blockquote { border-left: 3px solid var(--tint); padding: 2px 0 2px 14px; margin: 14px 0; color: var(--label-secondary); font-size: 16px; }
-                    .reader-card pre { overflow-x: auto; -webkit-overflow-scrolling: touch; background: #1C1C1E; color: #F5F5F7; padding: 14px 16px; border-radius: 10px; font-size: 14px; line-height: 1.5; margin: 14px 0; }
-                    .reader-card code { background: var(--fill-tertiary); padding: 2px 6px; border-radius: 5px; font-size: 15px; }
-                    .reader-card pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
-                    .reader-card hr { border: none; border-top: 0.5px solid var(--separator); margin: 24px 0; }
-                    .reader-card table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 15px; }
-                    .reader-card th, .reader-card td { padding: 8px 10px; text-align: left; border-bottom: 0.5px solid var(--separator); }
-                    .reader-card th { font-weight: 600; font-size: 13px; color: var(--label-tertiary); text-transform: uppercase; }
-                    .comment-section { margin-top: 20px; border-top: 0.5px solid var(--separator); padding-top: 0; }
-                    .comment-toggle {
-                      display: flex; align-items: center; justify-content: space-between;
-                      padding: 14px 0; cursor: pointer;
-                      -webkit-tap-highlight-color: transparent; user-select: none;
-                    }
-                    .comment-toggle span { font-size: 17px; font-weight: 600; color: var(--label); }
-                    .comment-toggle .chevron { color: var(--label-tertiary); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
-                    .comment-section.open .comment-toggle .chevron { transform: rotate(180deg); }
-                    .comment-body { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
-                    .comment-section.open .comment-body { max-height: 50000px; transition: max-height 0.5s ease-in; }
-                    .comment-thread { padding: 12px 0; }
-                    .comment-thread + .comment-thread { border-top: 0.5px solid var(--separator); }
-                    .comment-item { margin-bottom: 2px; }
-                    .comment-author { font-size: 15px; font-weight: 600; color: var(--label); margin-bottom: 4px; }
-                    .comment-reply-to { font-weight: 400; color: var(--label-tertiary); font-size: 14px; }
-                    .comment-content { font-size: 15px; line-height: 1.55; color: var(--label); margin-bottom: 4px; word-break: break-word; }
-                    .comment-content a { color: var(--tint); text-decoration: none; }
-                    .comment-content a:active { opacity: 0.6; }
-                    .comment-meta { display: flex; gap: 12px; font-size: 13px; color: var(--label-tertiary); margin-bottom: 8px; }
-                    .comment-replies { margin-left: 20px; padding-left: 12px; border-left: 2px solid var(--fill-tertiary); }
-                    .comment-replies .comment-item { padding: 8px 0; }
-                    .comment-replies .comment-item + .comment-item { border-top: 0.5px solid var(--separator); }
-                    .ai-content { padding-bottom: 8px; }
-                    .ai-content p { font-size: 15px; line-height: 1.6; margin-bottom: 10px; }
-                    .ai-content h1, .ai-content h2, .ai-content h3 { margin-top: 16px; margin-bottom: 8px; }
-                    .ai-content h2 { font-size: 17px; border-top: none; padding-top: 0; }
-                    .ai-content h3 { font-size: 15px; }
-                    .ai-content ul, .ai-content ol { margin-bottom: 10px; padding-left: 20px; }
-                    .ai-content li { font-size: 15px; line-height: 1.55; margin-bottom: 4px; }
-                    @media (max-width: 500px) {
-                      .reader-card { padding: 16px 14px; border-radius: 10px; }
-                      .reader-card h1 { font-size: 20px; }
-                      .reader-card h2 { font-size: 18px; }
-                      .reader-card p, .reader-card li { font-size: 16px; }
-                      .comment-replies { margin-left: 12px; padding-left: 10px; }
-                    }
-                    .action-bar {
-                      margin-top: 20px; padding-top: 16px;
-                      border-top: 0.5px solid var(--separator);
-                      display: flex; gap: 10px; flex-wrap: wrap;
-                    }
-                    .action-btn {
-                      flex: 1; min-width: 80px;
-                      padding: 10px 0; border-radius: 10px; border: none;
-                      font-size: 15px; font-weight: 500; cursor: pointer;
-                      background: var(--tint); color: #fff;
-                      transition: opacity 0.3s;
-                    }
-                    .action-btn:active { opacity: 0.5; }
-                    .action-btn:disabled { opacity: 0.4; cursor: default; }
-                    .action-btn-danger { background: #FF3B30; }
-                    .action-toast {
-                      position: fixed; bottom: calc(24px + var(--safe-bottom)); left: 50%; transform: translateX(-50%);
-                      background: rgba(0,0,0,0.75); color: #fff; padding: 10px 20px;
-                      border-radius: 20px; font-size: 15px; z-index: 100;
-                      opacity: 0; transition: opacity 0.3s; pointer-events: none;
-                    }
-                    .action-toast.show { opacity: 1; }
-                  </style>
-                </head>
-                <body>
-                  <nav class="reader-nav">
-                    <div class="reader-nav-inner">
-                      <a class="back-btn" href="/">
-                        <svg width="10" height="18" viewBox="0 0 10 18" fill="none"><path d="M9 1L1 9l8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        返回
-                      </a>
-                      <div class="nav-title-text">__TITLE__</div>
-                    </div>
-                  </nav>
-                  <main class="reader-main">
-                    <div class="reader-card">
-                """;
+        String header = "<!doctype html>\n"
+                + "<html lang=\"zh-CN\">\n"
+                + "<head>\n"
+                + "  <meta charset=\"UTF-8\">\n"
+                + "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n"
+                + "  <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n"
+                + "  <title>__TITLE__</title>\n"
+                + "  <style>\n"
+                + "    :root {\n"
+                + "      --system-bg: #F2F2F7;\n"
+                + "      --grouped-bg: #FFFFFF;\n"
+                + "      --label: #000000;\n"
+                + "      --label-secondary: #3C3C43;\n"
+                + "      --label-tertiary: #3C3C4399;\n"
+                + "      --separator: #3C3C4336;\n"
+                + "      --tint: #007AFF;\n"
+                + "      --fill-tertiary: #7676801F;\n"
+                + "      --safe-bottom: env(safe-area-inset-bottom, 0px);\n"
+                + "    }\n"
+                + "    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
+                + "    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }\n"
+                + "    body {\n"
+                + "      font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\",\n"
+                + "                   \"PingFang SC\", \"Helvetica Neue\", \"Microsoft YaHei\", sans-serif;\n"
+                + "      font-size: 17px; line-height: 1.58;\n"
+                + "      color: var(--label);\n"
+                + "      background: var(--system-bg);\n"
+                + "      -webkit-font-smoothing: antialiased;\n"
+                + "      -webkit-tap-highlight-color: transparent;\n"
+                + "    }\n"
+                + "    .reader-nav {\n"
+                + "      position: sticky; top: 0; z-index: 20;\n"
+                + "      background: rgba(249,249,249,0.94);\n"
+                + "      -webkit-backdrop-filter: saturate(180%) blur(20px);\n"
+                + "      backdrop-filter: saturate(180%) blur(20px);\n"
+                + "      border-bottom: 0.5px solid var(--separator);\n"
+                + "    }\n"
+                + "    .reader-nav-inner {\n"
+                + "      max-width: 700px; margin: 0 auto;\n"
+                + "      display: flex; align-items: center;\n"
+                + "      height: 44px; padding: 0 16px; gap: 12px;\n"
+                + "    }\n"
+                + "    .back-btn {\n"
+                + "      display: inline-flex; align-items: center; gap: 4px;\n"
+                + "      color: var(--tint); text-decoration: none;\n"
+                + "      font-size: 17px; font-weight: 400; padding: 4px 0;\n"
+                + "    }\n"
+                + "    .back-btn:active { opacity: 0.5; }\n"
+                + "    .back-btn svg { flex-shrink: 0; }\n"
+                + "    .nav-title-text {\n"
+                + "      flex: 1; text-align: center;\n"
+                + "      font-size: 17px; font-weight: 600; color: var(--label);\n"
+                + "      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\n"
+                + "      margin-right: 60px;\n"
+                + "    }\n"
+                + "    .reader-main {\n"
+                + "      max-width: 700px; margin: 0 auto;\n"
+                + "      padding: 16px 16px calc(32px + var(--safe-bottom));\n"
+                + "    }\n"
+                + "    .reader-card {\n"
+                + "      background: var(--grouped-bg);\n"
+                + "      border-radius: 12px; padding: 20px 18px; overflow: hidden;\n"
+                + "    }\n"
+                + "    .reader-card h1 { font-size: 22px; font-weight: 700; line-height: 1.3; margin-bottom: 16px; letter-spacing: -0.02em; }\n"
+                + "    .reader-card h2 { font-size: 19px; font-weight: 700; line-height: 1.35; margin-top: 28px; margin-bottom: 10px; padding-top: 20px; border-top: 0.5px solid var(--separator); }\n"
+                + "    .reader-card h2:first-child { border-top: none; padding-top: 0; margin-top: 0; }\n"
+                + "    .reader-card h3 { font-size: 17px; font-weight: 600; line-height: 1.4; margin-top: 22px; margin-bottom: 8px; }\n"
+                + "    .reader-card h4 { font-size: 15px; font-weight: 600; line-height: 1.4; margin-top: 18px; margin-bottom: 6px; color: var(--label-secondary); }\n"
+                + "    .reader-card p { margin-bottom: 14px; font-size: 17px; line-height: 1.65; }\n"
+                + "    .reader-card ul, .reader-card ol { margin-bottom: 14px; padding-left: 22px; }\n"
+                + "    .reader-card li { margin-bottom: 6px; font-size: 17px; line-height: 1.58; }\n"
+                + "    .reader-card img { max-width: 100%; height: auto; border-radius: 10px; margin: 12px 0; display: block; }\n"
+                + "    .reader-card a { color: var(--tint); text-decoration: none; }\n"
+                + "    .reader-card a:active { opacity: 0.5; }\n"
+                + "    .reader-card blockquote { border-left: 3px solid var(--tint); padding: 2px 0 2px 14px; margin: 14px 0; color: var(--label-secondary); font-size: 16px; }\n"
+                + "    .reader-card pre { overflow-x: auto; -webkit-overflow-scrolling: touch; background: #1C1C1E; color: #F5F5F7; padding: 14px 16px; border-radius: 10px; font-size: 14px; line-height: 1.5; margin: 14px 0; }\n"
+                + "    .reader-card code { background: var(--fill-tertiary); padding: 2px 6px; border-radius: 5px; font-size: 15px; }\n"
+                + "    .reader-card pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }\n"
+                + "    .reader-card hr { border: none; border-top: 0.5px solid var(--separator); margin: 24px 0; }\n"
+                + "    .reader-card table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 15px; }\n"
+                + "    .reader-card th, .reader-card td { padding: 8px 10px; text-align: left; border-bottom: 0.5px solid var(--separator); }\n"
+                + "    .reader-card th { font-weight: 600; font-size: 13px; color: var(--label-tertiary); text-transform: uppercase; }\n"
+                + "    .comment-section { margin-top: 20px; border-top: 0.5px solid var(--separator); padding-top: 0; }\n"
+                + "    .comment-toggle {\n"
+                + "      display: flex; align-items: center; justify-content: space-between;\n"
+                + "      padding: 14px 0; cursor: pointer;\n"
+                + "      -webkit-tap-highlight-color: transparent; user-select: none;\n"
+                + "    }\n"
+                + "    .comment-toggle span { font-size: 17px; font-weight: 600; color: var(--label); }\n"
+                + "    .comment-toggle .chevron { color: var(--label-tertiary); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }\n"
+                + "    .comment-section.open .comment-toggle .chevron { transform: rotate(180deg); }\n"
+                + "    .comment-body { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1); }\n"
+                + "    .comment-section.open .comment-body { max-height: 50000px; transition: max-height 0.5s ease-in; }\n"
+                + "    .comment-thread { padding: 12px 0; }\n"
+                + "    .comment-thread + .comment-thread { border-top: 0.5px solid var(--separator); }\n"
+                + "    .comment-item { margin-bottom: 2px; }\n"
+                + "    .comment-author { font-size: 15px; font-weight: 600; color: var(--label); margin-bottom: 4px; }\n"
+                + "    .comment-reply-to { font-weight: 400; color: var(--label-tertiary); font-size: 14px; }\n"
+                + "    .comment-content { font-size: 15px; line-height: 1.55; color: var(--label); margin-bottom: 4px; word-break: break-word; }\n"
+                + "    .comment-content a { color: var(--tint); text-decoration: none; }\n"
+                + "    .comment-content a:active { opacity: 0.6; }\n"
+                + "    .comment-meta { display: flex; gap: 12px; font-size: 13px; color: var(--label-tertiary); margin-bottom: 8px; }\n"
+                + "    .comment-replies { margin-left: 20px; padding-left: 12px; border-left: 2px solid var(--fill-tertiary); }\n"
+                + "    .comment-replies .comment-item { padding: 8px 0; }\n"
+                + "    .comment-replies .comment-item + .comment-item { border-top: 0.5px solid var(--separator); }\n"
+                + "    .ai-content { padding-bottom: 8px; }\n"
+                + "    .ai-content p { font-size: 15px; line-height: 1.6; margin-bottom: 10px; }\n"
+                + "    .ai-content h1, .ai-content h2, .ai-content h3 { margin-top: 16px; margin-bottom: 8px; }\n"
+                + "    .ai-content h2 { font-size: 17px; border-top: none; padding-top: 0; }\n"
+                + "    .ai-content h3 { font-size: 15px; }\n"
+                + "    .ai-content ul, .ai-content ol { margin-bottom: 10px; padding-left: 20px; }\n"
+                + "    .ai-content li { font-size: 15px; line-height: 1.55; margin-bottom: 4px; }\n"
+                + "    .comment-source-section {\n"
+                + "      background: var(--fill-tertiary); border-radius: 10px;\n"
+                + "      margin-bottom: 14px; overflow: hidden;\n"
+                + "    }\n"
+                + "    .comment-source-toggle {\n"
+                + "      display: flex; align-items: center; justify-content: space-between;\n"
+                + "      padding: 10px 14px; cursor: pointer;\n"
+                + "      -webkit-tap-highlight-color: transparent; user-select: none;\n"
+                + "    }\n"
+                + "    .comment-source-toggle span { font-size: 14px; font-weight: 500; color: var(--label-secondary); }\n"
+                + "    .comment-source-toggle .chevron { color: var(--label-tertiary); transition: transform 0.25s; }\n"
+                + "    .comment-source-section.source-open .comment-source-toggle .chevron { transform: rotate(180deg); }\n"
+                + "    .comment-source-body { max-height: 0; overflow: hidden; transition: max-height 0.35s; padding: 0 14px; }\n"
+                + "    .comment-source-section.source-open .comment-source-body { max-height: 50000px; padding-bottom: 10px; }\n"
+                + "    @media (max-width: 500px) {\n"
+                + "      .reader-card { padding: 16px 14px; border-radius: 10px; }\n"
+                + "      .reader-card h1 { font-size: 20px; }\n"
+                + "      .reader-card h2 { font-size: 18px; }\n"
+                + "      .reader-card p, .reader-card li { font-size: 16px; }\n"
+                + "      .comment-replies { margin-left: 12px; padding-left: 10px; }\n"
+                + "    }\n"
+                + "    .action-bar {\n"
+                + "      margin-top: 20px; padding-top: 16px;\n"
+                + "      border-top: 0.5px solid var(--separator);\n"
+                + "      display: flex; gap: 10px; flex-wrap: wrap;\n"
+                + "    }\n"
+                + "    .action-btn {\n"
+                + "      flex: 1; min-width: 80px;\n"
+                + "      padding: 10px 0; border-radius: 10px; border: none;\n"
+                + "      font-size: 15px; font-weight: 500; cursor: pointer;\n"
+                + "      background: var(--tint); color: #fff;\n"
+                + "      transition: opacity 0.3s;\n"
+                + "    }\n"
+                + "    .action-btn:active { opacity: 0.5; }\n"
+                + "    .action-btn:disabled { opacity: 0.4; cursor: default; }\n"
+                + "    .action-btn-danger { background: #FF3B30; }\n"
+                + "    .action-toast {\n"
+                + "      position: fixed; bottom: calc(24px + var(--safe-bottom)); left: 50%; transform: translateX(-50%);\n"
+                + "      background: rgba(0,0,0,0.75); color: #fff; padding: 10px 20px;\n"
+                + "      border-radius: 20px; font-size: 15px; z-index: 100;\n"
+                + "      opacity: 0; transition: opacity 0.3s; pointer-events: none;\n"
+                + "    }\n"
+                + "    .action-toast.show { opacity: 1; }\n"
+                + "  </style>\n"
+                + "</head>\n"
+                + "<body>\n"
+                + "  <nav class=\"reader-nav\">\n"
+                + "    <div class=\"reader-nav-inner\">\n"
+                + "      <a class=\"back-btn\" href=\"/\">\n"
+                + "        <svg width=\"10\" height=\"18\" viewBox=\"0 0 10 18\" fill=\"none\"><path d=\"M9 1L1 9l8 8\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>\n"
+                + "        返回\n"
+                + "      </a>\n"
+                + "      <div class=\"nav-title-text\">__TITLE__</div>\n"
+                + "    </div>\n"
+                + "  </nav>\n"
+                + "  <main class=\"reader-main\">\n"
+                + "    <div class=\"reader-card\">\n";
 
-        String footer = """
-                    </div>
-                  </main>
-                  <div id="actionToast" class="action-toast"></div>
-                  <script>
-                  function showActionToast(msg){
-                    var t=document.getElementById('actionToast');
-                    t.textContent=msg; t.classList.add('show');
-                    setTimeout(function(){t.classList.remove('show');},2000);
-                  }
-                  function doAction(btn,url,body,label){
-                    btn.disabled=true; btn.textContent=label+'...';
-                    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-                      .then(function(r){if(!r.ok) throw new Error('请求失败'); return r.json();})
-                      .then(function(){showActionToast(label+'任务已提交');})
-                      .catch(function(e){showActionToast(e.message);})
-                      .finally(function(){btn.disabled=false; btn.textContent=label;});
-                  }
-                  function doDelete(btn,source,type,id){
-                    if(!confirm('确定删除？关联的评论和AI分析结果也会一并删除。')) return;
-                    btn.disabled=true; btn.textContent='删除中...';
-                    fetch('/api/outputs/'+source+'/'+type+'/'+id,{method:'DELETE'})
-                      .then(function(r){if(!r.ok) throw new Error('删除失败'); showActionToast('已删除'); setTimeout(function(){location.href='/';},800);})
-                      .catch(function(e){showActionToast(e.message); btn.disabled=false; btn.textContent='删除';});
-                  }
-                  </script>
-                </body>
-                </html>
-                """;
+        String footer = "    </div>\n"
+                + "  </main>\n"
+                + "  <div id=\"actionToast\" class=\"action-toast\"></div>\n"
+                + "  <script>\n"
+                + "  function showActionToast(msg){\n"
+                + "    var t=document.getElementById('actionToast');\n"
+                + "    t.textContent=msg; t.classList.add('show');\n"
+                + "    setTimeout(function(){t.classList.remove('show');},2000);\n"
+                + "  }\n"
+                + "  function doAction(btn,url,body,label){\n"
+                + "    btn.disabled=true; btn.textContent=label+'...';\n"
+                + "    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})\n"
+                + "      .then(function(r){if(!r.ok) throw new Error('请求失败'); return r.json();})\n"
+                + "      .then(function(){showActionToast(label+'任务已提交');})\n"
+                + "      .catch(function(e){showActionToast(e.message);})\n"
+                + "      .finally(function(){btn.disabled=false; btn.textContent=label;});\n"
+                + "  }\n"
+                + "  function doDelete(btn,source,type,id){\n"
+                + "    if(!confirm('确定删除？关联的评论和AI分析结果也会一并删除。')) return;\n"
+                + "    btn.disabled=true; btn.textContent='删除中...';\n"
+                + "    fetch('/api/outputs/'+source+'/'+type+'/'+id,{method:'DELETE'})\n"
+                + "      .then(function(r){if(!r.ok) throw new Error('删除失败'); showActionToast('已删除'); setTimeout(function(){location.href='/';},800);})\n"
+                + "      .catch(function(e){showActionToast(e.message); btn.disabled=false; btn.textContent='删除';});\n"
+                + "  }\n"
+                + "  </script>\n"
+                + "</body>\n"
+                + "</html>\n";
 
         content = replaceZhihuEmoji(content);
         return header.replace("__TITLE__", escape(title)) + content + footer;
@@ -611,6 +722,32 @@ public class MarkdownViewController {
     private String escape(String value) {
         return value == null ? "" : value.replace("&", "&amp;").replace("<", "&lt;")
                 .replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    /**
+     * 清理知乎正文 HTML：解包 noscript、移除 script、修复图片 src
+     */
+    private String sanitizeContentHtml(String html) {
+        if (html == null || html.isEmpty()) return "";
+        // 移除 script 标签
+        html = html.replaceAll("(?is)<script[^>]*>.*?</script>", "");
+        // 解包 noscript（知乎把 img 包在 noscript 里做懒加载）
+        html = html.replaceAll("(?is)<noscript>(.*?)</noscript>", "$1");
+        // 有些图片 src 是占位图，data-actualsrc 才是真实地址，替换之
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?i)<img\\s([^>]*?)data-actualsrc\\s*=\\s*\"([^\"]*)\"([^>]*?)>")
+                .matcher(html);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String before = m.group(1);
+            String actualSrc = m.group(2);
+            String after = m.group(3);
+            String tag = "<img " + before + after + ">";
+            tag = tag.replaceAll("(?i)src\\s*=\\s*\"[^\"]*\"", "src=\"" + actualSrc + "\"");
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(tag));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     private String sanitizeCommentHtml(String html) {

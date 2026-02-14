@@ -854,6 +854,26 @@ public class ZhihuCommentDOExample {
             addCriterion("crawl_time not between", value1, value2, "crawlTime");
             return (Criteria) this;
         }
+
+        public Criteria andInvestRelatedIsNull() {
+            addCriterion("invest_related is null");
+            return (Criteria) this;
+        }
+
+        public Criteria andInvestRelatedIsNotNull() {
+            addCriterion("invest_related is not null");
+            return (Criteria) this;
+        }
+
+        public Criteria andInvestRelatedEqualTo(Byte value) {
+            addCriterion("invest_related =", value, "investRelated");
+            return (Criteria) this;
+        }
+
+        public Criteria andInvestRelatedNotEqualTo(Byte value) {
+            addCriterion("invest_related <>", value, "investRelated");
+            return (Criteria) this;
+        }
     }
 
     public static class Criteria extends GeneratedCriteria {

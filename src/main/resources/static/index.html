@@ -529,6 +529,7 @@
     </div>
     <div class="card">
       <ul class="list" id="task-list"></ul>
+      <div class="pager" id="task-pager"></div>
     </div>
   </section>
 
@@ -583,6 +584,7 @@
 const $ = (s) => document.getElementById(s);
 const toast = $('toast');
 const taskList = $('task-list');
+const taskPager = $('task-pager');
 const fileList = $('file-list');
 const pager = $('pager');
 const authorSelect = $('author-select');
@@ -591,6 +593,7 @@ const authorList = $('author-list');
 
 let qrSessionId = null, qrTimer = null;
 let allFiles = [], pageSize = 20, pageIdx = 0;
+let allTasks = [], taskPageSize = 5, taskPageIdx = 0;
 let authorCache = []; // 缓存作者列表
 
 const showToast = (msg) => {
@@ -790,10 +793,24 @@ const renderPhases = (phases) => {
 
 const refreshTasks = async () => {
   try {
-    const tasks = await fetchJson('/api/tasks');
-    taskList.innerHTML = '';
-    if (!tasks.length) { taskList.innerHTML = '<li class="list-cell empty">暂无任务</li>'; return; }
-    tasks.slice(0,20).forEach((t, idx) => {
+    allTasks = await fetchJson('/api/tasks');
+    // 如果当前有RUNNING任务，不重置页码（保持用户位置）
+    // 首次加载或手动刷新时重置到第一页
+    if (taskPageIdx > 0 && taskPageIdx >= Math.ceil(allTasks.length / taskPageSize)) {
+      taskPageIdx = Math.max(0, Math.ceil(allTasks.length / taskPageSize) - 1);
+    }
+    renderTaskPage();
+  } catch(e) { showToast('任务加载失败'); }
+};
+
+const renderTaskPage = () => {
+  taskList.innerHTML = '';
+  taskPager.innerHTML = '';
+  if (!allTasks.length) { taskList.innerHTML = '<li class="list-cell empty">暂无任务</li>'; return; }
+  const start = taskPageIdx * taskPageSize;
+  const page = allTasks.slice(start, start + taskPageSize);
+  page.forEach((t, i) => {
+      const idx = start + i;
       const cls = t.status==='COMPLETED'?'tag-ok':t.status==='FAILED'?'tag-err':t.status==='RUNNING'?'tag-run':'tag-pending';
       const labels = {PENDING:'排队中',RUNNING:'进行中',COMPLETED:'已完成',FAILED:'失败'};
       const msg = t.error||t.message||'';
@@ -830,8 +847,15 @@ const refreshTasks = async () => {
         + progressHtml + itemsHtml;
       taskList.appendChild(li);
     });
-  } catch(e) { showToast('任务加载失败'); }
+  const totalPages = Math.ceil(allTasks.length / taskPageSize);
+  if (totalPages > 1) {
+    taskPager.innerHTML = '<button class="pager-btn" '+(taskPageIdx<=0?'disabled':'')+' onclick="taskPrev()">上一页</button>'
+      + '<span>'+(taskPageIdx+1)+' / '+totalPages+'</span>'
+      + '<button class="pager-btn" '+(taskPageIdx>=totalPages-1?'disabled':'')+' onclick="taskNext()">下一页</button>';
+  }
 };
+const taskPrev = () => { if (taskPageIdx>0) { taskPageIdx--; renderTaskPage(); } };
+const taskNext = () => { if (taskPageIdx < Math.ceil(allTasks.length/taskPageSize)-1) { taskPageIdx++; renderTaskPage(); } };
 
 // Content
 const renderFilePage = () => {

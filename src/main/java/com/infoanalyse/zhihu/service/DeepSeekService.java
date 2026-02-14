@@ -130,6 +130,63 @@ public class DeepSeekService {
     }
 
     /**
+     * 批量分类评论线程是否与投资相关
+     * @param commentThreads 每个元素是一个评论线程的拼接文本，key=线程序号(从1开始)
+     * @return 每个线程序号对应的分类结果 true=投资相关 false=无关
+     */
+    public java.util.Map<Integer, Boolean> classifyCommentRelevance(java.util.Map<Integer, String> commentThreads) throws Exception {
+        if (!isAvailable() || commentThreads.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+
+        String systemPrompt = """
+                你是一个投资内容分类助手。用户会给你若干条评论线程（每条以"线程N:"开头），请判断每条线程是否与投资、股票、基金、理财、市场行情、经济分析等金融投资话题相关。
+
+                请严格按以下JSON格式返回结果，不要输出其他内容：
+                {"1":true,"2":false,"3":true}
+
+                其中 true 表示与投资相关，false 表示无关。
+                判断标准：只要线程中有任何一条评论涉及投资相关话题，整个线程就算相关。
+                """;
+
+        StringBuilder userPrompt = new StringBuilder();
+        for (var entry : commentThreads.entrySet()) {
+            userPrompt.append("线程").append(entry.getKey()).append(":\n");
+            userPrompt.append(entry.getValue()).append("\n\n");
+        }
+
+        String response = chat(systemPrompt, userPrompt.toString());
+
+        // 解析JSON结果
+        java.util.Map<Integer, Boolean> result = new java.util.LinkedHashMap<>();
+        try {
+            // 提取JSON部分（AI可能返回额外文字）
+            int start = response.indexOf('{');
+            int end = response.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                String json = response.substring(start, end + 1);
+                JsonNode node = objectMapper.readTree(json);
+                var it = node.fields();
+                while (it.hasNext()) {
+                    var field = it.next();
+                    try {
+                        result.put(Integer.parseInt(field.getKey()), field.getValue().asBoolean());
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("解析评论分类结果失败: {}", e.getMessage());
+        }
+
+        // 对于未返回结果的线程，默认为相关（保守策略）
+        for (Integer key : commentThreads.keySet()) {
+            result.putIfAbsent(key, true);
+        }
+
+        return result;
+    }
+
+    /**
      * 调用 DeepSeek Chat API
      */
     public String chat(String systemPrompt, String userPrompt) throws Exception {

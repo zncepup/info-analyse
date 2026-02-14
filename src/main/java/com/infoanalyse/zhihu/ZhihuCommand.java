@@ -767,6 +767,9 @@ public class ZhihuCommand {
 
             System.out.println("分析结果已保存到数据库");
 
+            // 自动对评论进行分类和分析
+            classifyAndAnalyzeComments(source, targetId, targetType);
+
             return "分析完成";
 
         } catch (Exception e) {
@@ -922,9 +925,178 @@ public class ZhihuCommand {
     /**
      * 重新AI分析：删除旧分析结果后重新分析
      */
+    /**
+     * 对评论进行投资相关性分类，并对投资相关评论做AI分析
+     */
+    public String classifyAndAnalyzeComments(String source, Long targetId, String targetType) {
+        try {
+            if (!deepSeekService.isAvailable()) {
+                return "DeepSeek API 未配置";
+            }
+
+            // 确定 target_type 数值
+            byte commentTargetType;
+            if ("answer".equals(targetType)) commentTargetType = 1;
+            else if ("article".equals(targetType)) commentTargetType = 2;
+            else if ("pin".equals(targetType)) commentTargetType = 3;
+            else return "不支持的类型: " + targetType;
+
+            // 查询所有评论
+            ZhihuCommentDOExample cEx = new ZhihuCommentDOExample();
+            cEx.createCriteria().andTargetIdEqualTo(targetId).andTargetTypeEqualTo(commentTargetType);
+            cEx.setOrderByClause("created_time ASC");
+            List<ZhihuCommentDO> comments = commentMapper.selectByExampleWithBLOBs(cEx);
+            if (comments.isEmpty()) return "无评论";
+
+            // 分组：根评论 + 子评论
+            java.util.Map<Long, ZhihuCommentDO> commentMap = new java.util.LinkedHashMap<>();
+            for (ZhihuCommentDO c : comments) commentMap.put(c.getCommentId(), c);
+
+            java.util.List<ZhihuCommentDO> roots = new java.util.ArrayList<>();
+            java.util.Map<Long, java.util.List<ZhihuCommentDO>> childrenMap = new java.util.LinkedHashMap<>();
+            for (ZhihuCommentDO c : comments) {
+                if (c.getParentCommentId() == null) {
+                    roots.add(c);
+                } else {
+                    childrenMap.computeIfAbsent(c.getParentCommentId(), k -> new java.util.ArrayList<>()).add(c);
+                }
+            }
+            // 父评论不在列表中的也当根评论
+            for (ZhihuCommentDO c : comments) {
+                if (c.getParentCommentId() != null && !commentMap.containsKey(c.getParentCommentId())) {
+                    roots.add(c);
+                }
+            }
+
+            // 只对未分类的根评论做分类
+            java.util.List<ZhihuCommentDO> unclassifiedRoots = new java.util.ArrayList<>();
+            for (ZhihuCommentDO root : roots) {
+                if (root.getInvestRelated() == null) {
+                    unclassifiedRoots.add(root);
+                }
+            }
+
+            if (!unclassifiedRoots.isEmpty()) {
+                // 构建线程文本
+                java.util.Map<Integer, String> threadTexts = new java.util.LinkedHashMap<>();
+                java.util.Map<Integer, ZhihuCommentDO> threadRoots = new java.util.LinkedHashMap<>();
+                int idx = 1;
+                for (ZhihuCommentDO root : unclassifiedRoots) {
+                    StringBuilder threadText = new StringBuilder();
+                    threadText.append(stripHtml(root.getContent()));
+                    java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+                    if (children != null) {
+                        for (ZhihuCommentDO child : children) {
+                            threadText.append("\n").append(stripHtml(child.getContent()));
+                        }
+                    }
+                    threadTexts.put(idx, threadText.toString());
+                    threadRoots.put(idx, root);
+                    idx++;
+                }
+
+                System.out.println("正在分类 " + unclassifiedRoots.size() + " 个评论线程...");
+                java.util.Map<Integer, Boolean> classification = deepSeekService.classifyCommentRelevance(threadTexts);
+
+                // 更新分类结果到DB
+                for (var entry : classification.entrySet()) {
+                    ZhihuCommentDO root = threadRoots.get(entry.getKey());
+                    if (root == null) continue;
+                    byte val = (byte) (entry.getValue() ? 1 : 0);
+
+                    // 更新根评论
+                    ZhihuCommentDO update = new ZhihuCommentDO();
+                    update.setId(root.getId());
+                    update.setInvestRelated(val);
+                    commentMapper.updateByPrimaryKeySelective(update);
+                    root.setInvestRelated(val);
+
+                    // 子评论跟随根评论
+                    java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+                    if (children != null) {
+                        for (ZhihuCommentDO child : children) {
+                            ZhihuCommentDO cu = new ZhihuCommentDO();
+                            cu.setId(child.getId());
+                            cu.setInvestRelated(val);
+                            commentMapper.updateByPrimaryKeySelective(cu);
+                        }
+                    }
+                }
+                System.out.println("评论分类完成");
+            }
+
+            // 收集投资相关的评论线程文本，用于AI分析
+            StringBuilder investCommentText = new StringBuilder();
+            int investCount = 0;
+            for (ZhihuCommentDO root : roots) {
+                if (root.getInvestRelated() != null && root.getInvestRelated() == 1) {
+                    investCount++;
+                    investCommentText.append("---\n");
+                    investCommentText.append(safe(root.getAuthorName())).append(": ").append(stripHtml(root.getContent())).append("\n");
+                    java.util.List<ZhihuCommentDO> children = childrenMap.get(root.getCommentId());
+                    if (children != null) {
+                        for (ZhihuCommentDO child : children) {
+                            investCommentText.append("  ").append(safe(child.getAuthorName())).append(": ").append(stripHtml(child.getContent())).append("\n");
+                        }
+                    }
+                }
+            }
+
+            if (investCount == 0) {
+                System.out.println("无投资相关评论，跳过评论AI分析");
+                return "评论分类完成，无投资相关评论";
+            }
+
+            // 检查是否已有评论分析结果
+            AiAnalysisDOExample aiEx = new AiAnalysisDOExample();
+            aiEx.createCriteria()
+                    .andSourceEqualTo(source)
+                    .andTargetIdEqualTo(targetId)
+                    .andTargetTypeEqualTo(targetType)
+                    .andAnalysisTypeEqualTo("comment_investment_clue");
+            if (aiAnalysisMapper.countByExample(aiEx) > 0) {
+                return "评论分类完成，评论AI分析结果已存在";
+            }
+
+            System.out.println("正在分析 " + investCount + " 个投资相关评论线程...");
+            String title = loadTitleFromDb(source, targetId, targetType);
+            String analysis = deepSeekService.extractInvestmentClues(investCommentText.toString(), title + " - 评论区");
+
+            // 保存评论分析结果
+            AiAnalysisDO record = new AiAnalysisDO();
+            record.setSource(source);
+            record.setTargetId(targetId);
+            record.setTargetType(targetType);
+            record.setAiModel("deepseek-reasoner");
+            record.setAnalysisType("comment_investment_clue");
+            record.setResult(analysis);
+            record.setStatus("COMPLETED");
+            record.setCreatedTime(java.time.LocalDateTime.now());
+            aiAnalysisMapper.insertSelective(record);
+
+            System.out.println("评论AI分析完成");
+            return "评论分类和分析完成";
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "评论分类/分析失败: " + e.getMessage();
+        }
+    }
+
+    private String stripHtml(String html) {
+        if (html == null || html.isEmpty()) return "";
+        return html.replaceAll("<[^>]+>", "").replace("&nbsp;", " ")
+                .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&#39;", "'").trim();
+    }
+
+    private String safe(String value) {
+        return value != null ? value : "";
+    }
+
     public String reAnalyze(String source, Long targetId, String targetType) {
         try {
-            // 删除旧的分析结果
+            // 删除旧的分析结果（包括评论分析）
             AiAnalysisDOExample delEx = new AiAnalysisDOExample();
             delEx.createCriteria()
                     .andSourceEqualTo(source)
@@ -932,6 +1104,29 @@ public class ZhihuCommand {
                     .andTargetTypeEqualTo(targetType);
             int deleted = aiAnalysisMapper.deleteByExample(delEx);
             System.out.println("已删除旧分析结果 " + deleted + " 条");
+
+            // 重置评论分类标记
+            byte commentTargetType;
+            if ("answer".equals(targetType)) commentTargetType = 1;
+            else if ("article".equals(targetType)) commentTargetType = 2;
+            else if ("pin".equals(targetType)) commentTargetType = 3;
+            else commentTargetType = 0;
+            if (commentTargetType > 0) {
+                ZhihuCommentDO resetRow = new ZhihuCommentDO();
+                resetRow.setInvestRelated(null);
+                ZhihuCommentDOExample resetEx = new ZhihuCommentDOExample();
+                resetEx.createCriteria().andTargetIdEqualTo(targetId).andTargetTypeEqualTo(commentTargetType);
+                // updateByExampleSelective won't set null, use raw update
+                // We need to use a workaround: set invest_related via updateByExample
+                java.util.List<ZhihuCommentDO> cmts = commentMapper.selectByExample(resetEx);
+                for (ZhihuCommentDO c : cmts) {
+                    c.setInvestRelated(null);
+                    commentMapper.updateByPrimaryKey(c);
+                }
+                if (!cmts.isEmpty()) {
+                    System.out.println("已重置 " + cmts.size() + " 条评论的分类标记");
+                }
+            }
 
             // 重新分析
             return analyzeContentFromDb(source, targetId, targetType);

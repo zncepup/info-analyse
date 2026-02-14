@@ -14,6 +14,7 @@
     <result column="reply_to_author" jdbcType="VARCHAR" property="replyToAuthor" />
     <result column="created_time" jdbcType="TIMESTAMP" property="createdTime" />
     <result column="crawl_time" jdbcType="TIMESTAMP" property="crawlTime" />
+    <result column="invest_related" jdbcType="TINYINT" property="investRelated" />
   </resultMap>
   <resultMap extends="BaseResultMap" id="ResultMapWithBLOBs" type="com.infoanalyse.dao.model.ZhihuCommentDO">
     <result column="content" jdbcType="LONGVARCHAR" property="content" />
@@ -78,7 +79,7 @@
   </sql>
   <sql id="Base_Column_List">
     id, comment_id, target_id, target_type, author_name, author_id, like_count, parent_comment_id, 
-    reply_comment_id, reply_to_author, created_time, crawl_time
+    reply_comment_id, reply_to_author, created_time, crawl_time, invest_related
   </sql>
   <sql id="Blob_Column_List">
     content
@@ -135,12 +136,12 @@
     insert into zhihu_comment (comment_id, target_id, target_type, 
       author_name, author_id, like_count, 
       parent_comment_id, reply_comment_id, reply_to_author, 
-      created_time, crawl_time, content
+      created_time, crawl_time, invest_related, content
       )
     values (#{commentId,jdbcType=BIGINT}, #{targetId,jdbcType=BIGINT}, #{targetType,jdbcType=TINYINT}, 
       #{authorName,jdbcType=VARCHAR}, #{authorId,jdbcType=VARCHAR}, #{likeCount,jdbcType=INTEGER}, 
       #{parentCommentId,jdbcType=BIGINT}, #{replyCommentId,jdbcType=BIGINT}, #{replyToAuthor,jdbcType=VARCHAR}, 
-      #{createdTime,jdbcType=TIMESTAMP}, #{crawlTime,jdbcType=TIMESTAMP}, #{content,jdbcType=LONGVARCHAR}
+      #{createdTime,jdbcType=TIMESTAMP}, #{crawlTime,jdbcType=TIMESTAMP}, #{investRelated,jdbcType=TINYINT}, #{content,jdbcType=LONGVARCHAR}
       )
   </insert>
   <insert id="insertSelective" keyColumn="id" keyProperty="id" parameterType="com.infoanalyse.dao.model.ZhihuCommentDO" useGeneratedKeys="true">
@@ -179,6 +180,9 @@
       <if test="crawlTime != null">
         crawl_time,
       </if>
+      <if test="investRelated != null">
+        invest_related,
+      </if>
       <if test="content != null">
         content,
       </if>
@@ -216,6 +220,9 @@
       </if>
       <if test="crawlTime != null">
         #{crawlTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="investRelated != null">
+        #{investRelated,jdbcType=TINYINT},
       </if>
       <if test="content != null">
         #{content,jdbcType=LONGVARCHAR},
@@ -267,6 +274,9 @@
       <if test="row.crawlTime != null">
         crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP},
       </if>
+      <if test="row.investRelated != null">
+        invest_related = #{row.investRelated,jdbcType=TINYINT},
+      </if>
       <if test="row.content != null">
         content = #{row.content,jdbcType=LONGVARCHAR},
       </if>
@@ -289,6 +299,7 @@
       reply_to_author = #{row.replyToAuthor,jdbcType=VARCHAR},
       created_time = #{row.createdTime,jdbcType=TIMESTAMP},
       crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP},
+      invest_related = #{row.investRelated,jdbcType=TINYINT},
       content = #{row.content,jdbcType=LONGVARCHAR}
     <if test="example != null">
       <include refid="Update_By_Example_Where_Clause" />
@@ -307,7 +318,8 @@
       reply_comment_id = #{row.replyCommentId,jdbcType=BIGINT},
       reply_to_author = #{row.replyToAuthor,jdbcType=VARCHAR},
       created_time = #{row.createdTime,jdbcType=TIMESTAMP},
-      crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP}
+      crawl_time = #{row.crawlTime,jdbcType=TIMESTAMP},
+      invest_related = #{row.investRelated,jdbcType=TINYINT}
     <if test="example != null">
       <include refid="Update_By_Example_Where_Clause" />
     </if>
@@ -348,6 +360,9 @@
       <if test="crawlTime != null">
         crawl_time = #{crawlTime,jdbcType=TIMESTAMP},
       </if>
+      <if test="investRelated != null">
+        invest_related = #{investRelated,jdbcType=TINYINT},
+      </if>
       <if test="content != null">
         content = #{content,jdbcType=LONGVARCHAR},
       </if>
@@ -367,6 +382,7 @@
       reply_to_author = #{replyToAuthor,jdbcType=VARCHAR},
       created_time = #{createdTime,jdbcType=TIMESTAMP},
       crawl_time = #{crawlTime,jdbcType=TIMESTAMP},
+      invest_related = #{investRelated,jdbcType=TINYINT},
       content = #{content,jdbcType=LONGVARCHAR}
     where id = #{id,jdbcType=BIGINT}
   </update>
@@ -382,7 +398,8 @@
       reply_comment_id = #{replyCommentId,jdbcType=BIGINT},
       reply_to_author = #{replyToAuthor,jdbcType=VARCHAR},
       created_time = #{createdTime,jdbcType=TIMESTAMP},
-      crawl_time = #{crawlTime,jdbcType=TIMESTAMP}
+      crawl_time = #{crawlTime,jdbcType=TIMESTAMP},
+      invest_related = #{investRelated,jdbcType=TINYINT}
     where id = #{id,jdbcType=BIGINT}
   </update>
 </mapper>

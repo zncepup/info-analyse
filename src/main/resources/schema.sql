@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS zhihu_comment (
     reply_to_author     VARCHAR(100)    COMMENT '回复目标作者昵称',
     created_time        DATETIME        COMMENT '评论时间',
     crawl_time          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '抓取时间',
+    invest_related  TINYINT         DEFAULT NULL COMMENT '投资相关: 1=是 0=否 NULL=未分类',
     UNIQUE KEY uk_comment_id (comment_id),
     INDEX idx_target (target_id, target_type),
     INDEX idx_parent (parent_comment_id)

@@ -27,6 +27,8 @@ public class ZhihuCommentDO {
 
     private LocalDateTime crawlTime;
 
+    private Byte investRelated;
+
     private String content;
 
     public Long getId() {
@@ -123,6 +125,14 @@ public class ZhihuCommentDO {
 
     public void setCrawlTime(LocalDateTime crawlTime) {
         this.crawlTime = crawlTime;
+    }
+
+    public Byte getInvestRelated() {
+        return investRelated;
+    }
+
+    public void setInvestRelated(Byte investRelated) {
+        this.investRelated = investRelated;
     }
 
     public String getContent() {

@@ -31,6 +31,7 @@ out/
 *.war
 *.ear
 *.log
+*.log.*.gz
 hs_err_pid*
 
 # OS
