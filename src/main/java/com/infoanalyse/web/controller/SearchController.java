@@ -1,6 +1,9 @@
 package com.infoanalyse.web.controller;
 
 import com.infoanalyse.dao.mapper.SearchMapper;
+import com.infoanalyse.dao.mapper.ContentTagMapper;
+import com.infoanalyse.dao.model.ContentTagDO;
+import com.infoanalyse.dao.model.ContentTagMappingDO;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -10,9 +13,11 @@ import java.util.*;
 public class SearchController {
 
     private final SearchMapper searchMapper;
+    private final ContentTagMapper tagMapper;
 
-    public SearchController(SearchMapper searchMapper) {
+    public SearchController(SearchMapper searchMapper, ContentTagMapper tagMapper) {
         this.searchMapper = searchMapper;
+        this.tagMapper = tagMapper;
     }
 
     @GetMapping
@@ -118,5 +123,80 @@ public class SearchController {
         if (link.contains("/pin/")) return "pin";
         if (link.contains("/guba/post/")) return "guba_post";
         return "unknown";
+    }
+
+    /**
+     * 高级搜索：支持关键字 + 作者 + 标签 + 内容类型多条件组合
+     */
+    @GetMapping("/advanced")
+    public Map<String, Object> advancedSearch(
+            @RequestParam(value = "q", required = false) String keyword,
+            @RequestParam(value = "author", required = false) String author,
+            @RequestParam(value = "tags", required = false) String tagIdsStr,
+            @RequestParam(value = "type", required = false) String contentType,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+
+        if (limit > 500) limit = 500;
+        if (keyword != null) keyword = keyword.trim();
+        if (author != null) author = author.trim();
+        if (contentType != null) contentType = contentType.trim();
+
+        // 解析标签ID列表
+        List<Long> tagIds = null;
+        if (tagIdsStr != null && !tagIdsStr.isBlank()) {
+            tagIds = new ArrayList<>();
+            for (String s : tagIdsStr.split(",")) {
+                try { tagIds.add(Long.parseLong(s.trim())); } catch (NumberFormatException ignored) {}
+            }
+            if (tagIds.isEmpty()) tagIds = null;
+        }
+
+        // 至少需要一个筛选条件
+        boolean hasKeyword = keyword != null && !keyword.isEmpty();
+        boolean hasAuthor = author != null && !author.isEmpty();
+        boolean hasTags = tagIds != null;
+        boolean hasType = contentType != null && !contentType.isEmpty();
+        if (!hasKeyword && !hasAuthor && !hasTags && !hasType) {
+            return Map.of("results", List.of(), "total", 0);
+        }
+
+        List<Map<String, Object>> raw = searchMapper.advancedSearch(
+                hasKeyword ? keyword : null,
+                hasAuthor ? author : null,
+                tagIds,
+                hasType ? contentType : null,
+                limit);
+
+        // 构建结果，附带标签信息
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Map<String, Object> r : raw) {
+            Map<String, Object> item = new LinkedHashMap<>(r);
+            String prefix = (String) r.get("linkPrefix");
+            Object targetId = r.get("targetId");
+            item.put("link", (prefix != null && targetId != null) ? prefix + targetId : null);
+            item.remove("linkPrefix");
+
+            // 附带标签
+            String src = (String) r.get("source");
+            String type = (String) r.get("type");
+            String tgtType = "guba_post".equals(type) ? "post" : type;
+            if (src != null && targetId != null) {
+                List<ContentTagMappingDO> mappings = tagMapper.selectMappingsByContent(src, ((Number) targetId).longValue(), tgtType);
+                List<Map<String, Object>> tagList = new ArrayList<>();
+                for (ContentTagMappingDO m : mappings) {
+                    ContentTagDO tag = tagMapper.selectById(m.getTagId());
+                    if (tag != null) {
+                        tagList.add(Map.of("id", tag.getId(), "name", tag.getTagName(), "color", tag.getColor()));
+                    }
+                }
+                item.put("tags", tagList);
+            }
+            results.add(item);
+        }
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("total", results.size());
+        resp.put("results", results);
+        return resp;
     }
 }

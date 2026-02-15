@@ -177,3 +177,26 @@ CREATE TABLE IF NOT EXISTS ai_analysis (
     INDEX idx_model_type (ai_model, analysis_type),
     UNIQUE KEY uk_target_model_type (source, target_id, target_type, ai_model, analysis_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI分析结果';
+
+-- 内容标签
+CREATE TABLE IF NOT EXISTS content_tag (
+    id              BIGINT          AUTO_INCREMENT PRIMARY KEY,
+    tag_name        VARCHAR(100)    NOT NULL COMMENT '标签名称',
+    color           VARCHAR(20)     DEFAULT '#007AFF' COMMENT '标签颜色(HEX)',
+    sort_order      INT             DEFAULT 0 COMMENT '排序权重',
+    created_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tag_name (tag_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内容标签';
+
+-- 内容-标签关联
+CREATE TABLE IF NOT EXISTS content_tag_mapping (
+    id              BIGINT          AUTO_INCREMENT PRIMARY KEY,
+    tag_id          BIGINT          NOT NULL COMMENT '标签ID',
+    source          VARCHAR(20)     NOT NULL COMMENT '来源: zhihu / guba',
+    target_id       BIGINT          NOT NULL COMMENT '内容业务ID',
+    target_type     VARCHAR(20)     NOT NULL COMMENT '内容类型: answer / article / pin / post',
+    created_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tag_content (tag_id, source, target_id, target_type),
+    INDEX idx_content (source, target_id, target_type),
+    INDEX idx_tag (tag_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内容标签关联';

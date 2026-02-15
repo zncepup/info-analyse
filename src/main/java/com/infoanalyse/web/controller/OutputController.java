@@ -19,19 +19,22 @@ public class OutputController {
     private final AiAnalysisDOMapper aiAnalysisMapper;
     private final ZhihuPinDOMapper pinMapper;
     private final ZhihuCommentDOMapper commentMapper;
+    private final ContentTagMapper tagMapper;
 
     public OutputController(ZhihuAnswerDOMapper answerMapper,
                             ZhihuArticleDOMapper articleMapper,
                             GubaPostDOMapper gubaPostMapper,
                             AiAnalysisDOMapper aiAnalysisMapper,
                             ZhihuPinDOMapper pinMapper,
-                            ZhihuCommentDOMapper commentMapper) {
+                            ZhihuCommentDOMapper commentMapper,
+                            ContentTagMapper tagMapper) {
         this.answerMapper = answerMapper;
         this.articleMapper = articleMapper;
         this.gubaPostMapper = gubaPostMapper;
         this.aiAnalysisMapper = aiAnalysisMapper;
         this.pinMapper = pinMapper;
         this.commentMapper = commentMapper;
+        this.tagMapper = tagMapper;
     }
 
     /**
@@ -106,7 +109,8 @@ public class OutputController {
                         "guba/post/" + p.getPostId(),
                         p.getContent() != null ? p.getContent().length() : 0,
                         modified, "guba_post",
-                        "/view/guba/post/" + p.getPostId(), null, analyzed));
+                        "/view/guba/post/" + p.getPostId(), null, analyzed,
+                        loadTags("guba", p.getPostId(), "post")));
             }
         } else {
             // 知乎作者
@@ -122,7 +126,8 @@ public class OutputController {
                         "zhihu/answer/" + a.getAnswerId(),
                         a.getContent() != null ? a.getContent().length() : 0,
                         modified, "answer",
-                        "/view/zhihu/answer/" + a.getAnswerId(), null, analyzed));
+                        "/view/zhihu/answer/" + a.getAnswerId(), null, analyzed,
+                        loadTags("zhihu", a.getAnswerId(), "answer")));
             }
 
             ZhihuArticleDOExample artExample = new ZhihuArticleDOExample();
@@ -137,7 +142,8 @@ public class OutputController {
                         "zhihu/article/" + a.getArticleId(),
                         a.getContent() != null ? a.getContent().length() : 0,
                         modified, "article",
-                        "/view/zhihu/article/" + a.getArticleId(), null, analyzed));
+                        "/view/zhihu/article/" + a.getArticleId(), null, analyzed,
+                        loadTags("zhihu", a.getArticleId(), "article")));
             }
 
             ZhihuPinDOExample pinExample = new ZhihuPinDOExample();
@@ -155,7 +161,8 @@ public class OutputController {
                         "zhihu/pin/" + p.getPinId(),
                         p.getContent() != null ? p.getContent().length() : 0,
                         modified, "pin",
-                        "/view/zhihu/pin/" + p.getPinId(), null, analyzed));
+                        "/view/zhihu/pin/" + p.getPinId(), null, analyzed,
+                        loadTags("zhihu", p.getPinId(), "pin")));
             }
 
             files.sort(Comparator.comparingLong(FileInfo::lastModified).reversed());
@@ -191,7 +198,7 @@ public class OutputController {
                             long size = java.nio.file.Files.size(p);
                             long modified = java.nio.file.Files.getLastModifiedTime(p).toMillis();
                             String downloadUrl = "/output/" + authorName + "/" + relative;
-                            files.add(new FileInfo(name, relative, size, modified, "docx", null, downloadUrl, false));
+                            files.add(new FileInfo(name, relative, size, modified, "docx", null, downloadUrl, false, List.of()));
                         } catch (java.io.IOException ignored) {}
                     });
         } catch (java.io.IOException ignored) {}
@@ -271,5 +278,18 @@ public class OutputController {
     public record AuthorInfo(String name, int mdCount, int docCount, long lastModified) {}
 
     public record FileInfo(String name, String relativePath, long size, long lastModified, String type,
-                           String viewUrl, String downloadUrl, boolean analyzed) {}
+                           String viewUrl, String downloadUrl, boolean analyzed, List<TagVO> tags) {}
+
+    public record TagVO(Long id, String name, String color) {}
+
+    private List<TagVO> loadTags(String source, Long targetId, String targetType) {
+        List<ContentTagMappingDO> mappings = tagMapper.selectMappingsByContent(source, targetId, targetType);
+        if (mappings.isEmpty()) return List.of();
+        List<TagVO> tags = new ArrayList<>();
+        for (ContentTagMappingDO m : mappings) {
+            ContentTagDO tag = tagMapper.selectById(m.getTagId());
+            if (tag != null) tags.add(new TagVO(tag.getId(), tag.getTagName(), tag.getColor()));
+        }
+        return tags;
+    }
 }
