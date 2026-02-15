@@ -145,6 +145,8 @@ public class WordExportService {
     }
     
     private void addFormattedText(XWPFParagraph paragraph, String text) {
+        // 先清理链接语法，只保留链接文本
+        text = LINK_PATTERN.matcher(text).replaceAll("$1");
         Matcher boldMatcher = BOLD_PATTERN.matcher(text);
         int lastEnd = 0;
         while (boldMatcher.find()) {
@@ -154,7 +156,7 @@ public class WordExportService {
             }
             XWPFRun boldRun = paragraph.createRun();
             String boldText = boldMatcher.group(1) != null ? boldMatcher.group(1) : boldMatcher.group(2);
-            boldRun.setText(boldText);
+            boldRun.setText(cleanMarkdown(boldText));
             boldRun.setBold(true);
             lastEnd = boldMatcher.end();
         }
@@ -170,6 +172,11 @@ public class WordExportService {
     private void addImage(XWPFParagraph paragraph, String imagePath, Path parentDir) {
         try {
             if (imagePath.startsWith("http")) {
+                XWPFRun run = paragraph.createRun();
+                run.setText("[图片: " + imagePath + "]");
+                return;
+            }
+            if (parentDir == null) {
                 XWPFRun run = paragraph.createRun();
                 run.setText("[图片: " + imagePath + "]");
                 return;

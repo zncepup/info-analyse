@@ -14,11 +14,14 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.*;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("/api/export")
@@ -50,7 +53,7 @@ public class ExportController {
     }
 
     /**
-     * 批量导出多篇内容为单个 Word 文件
+     * 批量导出：每篇内容导出为独立 Word 文件，放在一个新建文件夹中，最终打包为 zip 下载
      */
     @PostMapping("/batch")
     public TaskInfo batchExport(@RequestBody BatchExportRequest req) {
@@ -68,63 +71,84 @@ public class ExportController {
         return taskService.submit("batch-export", "批量导出 " + req.contents.size() + " 篇内容", params,
                 (task) -> {
                     task.setTotalSteps(req.contents.size());
-                    StringBuilder allContent = new StringBuilder();
-                    int count = 0;
-                    String firstTitle = null;
 
+                    // 创建文件夹: output/export/批量导出_N篇_<timestamp>/
+                    String folderName = "批量导出_" + req.contents.size() + "篇_" + System.currentTimeMillis();
+                    Path folderPath = Path.of("output", "export", folderName);
+                    try { Files.createDirectories(folderPath); } catch (Exception e) {
+                        throw new RuntimeException("创建导出目录失败: " + e.getMessage(), e);
+                    }
+
+                    int count = 0;
                     for (ContentRef ref : req.contents) {
                         count++;
                         task.stepStart("[" + count + "/" + req.contents.size() + "] " + ref.targetType + "/" + ref.targetId);
 
                         String title = loadTitle(ref.source, ref.targetType, Long.parseLong(ref.targetId));
-                        if (firstTitle == null) firstTitle = title;
-
-                        if (allContent.length() > 0) {
-                            allContent.append("\n\n---\n\n");
-                        }
-                        allContent.append("# ").append(title != null ? title : ref.targetType + "/" + ref.targetId).append("\n\n");
+                        StringBuilder content = new StringBuilder();
+                        content.append("# ").append(title != null ? title : ref.targetType + "/" + ref.targetId).append("\n\n");
 
                         if (includeBody) {
                             String body = loadContent(ref.source, ref.targetType, Long.parseLong(ref.targetId));
-                            if (body != null && !body.isBlank()) {
-                                allContent.append(body).append("\n\n");
-                            }
+                            if (body != null && !body.isBlank()) content.append(body).append("\n\n");
                         }
-
                         if (includeComments) {
                             String comments = loadComments(ref.source, ref.targetType, Long.parseLong(ref.targetId));
-                            if (comments != null && !comments.isBlank()) {
-                                allContent.append("## 评论\n\n").append(comments).append("\n\n");
-                            }
+                            if (comments != null && !comments.isBlank()) content.append("## 评论\n\n").append(comments).append("\n\n");
                         }
-
                         if (includeAi) {
                             String ai = loadAiAnalysis(ref.source, ref.targetType, Long.parseLong(ref.targetId));
-                            if (ai != null && !ai.isBlank()) {
-                                allContent.append(ai).append("\n\n");
-                            }
+                            if (ai != null && !ai.isBlank()) content.append(ai).append("\n\n");
                         }
 
+                        // 文件名: 用标题，去掉非法字符
+                        String safeTitle = (title != null ? title : ref.targetType + "_" + ref.targetId)
+                                .replaceAll("[\\\\/:*?\"<>|]", "_");
+                        if (safeTitle.length() > 80) safeTitle = safeTitle.substring(0, 80);
+                        Path docxPath = folderPath.resolve(safeTitle + ".docx");
+
+                        // 图片基准目录: output/<authorName>/
+                        String authorName = loadAuthorName(ref.source, ref.targetType, Long.parseLong(ref.targetId));
+                        Path imageBaseDir = null;
+                        if (authorName != null) {
+                            String safeAuthor = authorName.replaceAll("[\\\\/:*?\"<>|]", "_").replaceAll("\\s+", "_");
+                            imageBaseDir = Path.of("output", safeAuthor);
+                        }
+
+                        try {
+                            wordExportService.exportContentToWord(content.toString(), docxPath, imageBaseDir);
+                        } catch (Exception e) {
+                            throw new RuntimeException("导出失败 [" + safeTitle + "]: " + e.getMessage(), e);
+                        }
                         task.stepDone("✓ " + (title != null ? title : ref.targetId));
                     }
 
-                    // 生成文件名
-                    String fileName;
-                    if (req.contents.size() == 1 && firstTitle != null) {
-                        fileName = firstTitle.replaceAll("[\\\\/:*?\"<>|]", "_");
-                    } else {
-                        fileName = "批量导出_" + req.contents.size() + "篇_" + System.currentTimeMillis();
-                    }
-                    Path outputPath = Path.of("output", "export", fileName + ".docx");
-
+                    // 打包为 zip
+                    String zipName = folderName + ".zip";
+                    Path zipPath = Path.of("output", "export", zipName);
                     try {
-                        wordExportService.exportContentToWord(allContent.toString(), outputPath, null);
+                        zipFolder(folderPath, zipPath);
                     } catch (Exception e) {
-                        throw new RuntimeException("导出失败: " + e.getMessage(), e);
+                        throw new RuntimeException("打包zip失败: " + e.getMessage(), e);
                     }
 
-                    return "/api/export/download/" + outputPath.getFileName().toString();
+                    return "/api/export/download/" + zipName;
                 });
+    }
+
+    private void zipFolder(Path folder, Path zipFile) throws IOException {
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile.toFile()))) {
+            Files.walk(folder).filter(Files::isRegularFile).forEach(file -> {
+                try {
+                    String entryName = folder.getFileName().toString() + "/" + folder.relativize(file).toString();
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    Files.copy(file, zos);
+                    zos.closeEntry();
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        }
     }
 
     /**
@@ -168,6 +192,31 @@ public class ExportController {
             ex.createCriteria().andPostIdEqualTo(targetId);
             List<GubaPostDO> list = gubaPostMapper.selectByExample(ex);
             return list.isEmpty() ? null : list.get(0).getTitle();
+        }
+        return null;
+    }
+
+    private String loadAuthorName(String source, String targetType, Long targetId) {
+        if ("zhihu".equals(source) && "answer".equals(targetType)) {
+            ZhihuAnswerDOExample ex = new ZhihuAnswerDOExample();
+            ex.createCriteria().andAnswerIdEqualTo(targetId);
+            List<ZhihuAnswerDO> list = answerMapper.selectByExample(ex);
+            return list.isEmpty() ? null : list.get(0).getAuthorName();
+        } else if ("zhihu".equals(source) && "article".equals(targetType)) {
+            ZhihuArticleDOExample ex = new ZhihuArticleDOExample();
+            ex.createCriteria().andArticleIdEqualTo(targetId);
+            List<ZhihuArticleDO> list = articleMapper.selectByExample(ex);
+            return list.isEmpty() ? null : list.get(0).getAuthorName();
+        } else if ("zhihu".equals(source) && "pin".equals(targetType)) {
+            ZhihuPinDOExample ex = new ZhihuPinDOExample();
+            ex.createCriteria().andPinIdEqualTo(targetId);
+            List<ZhihuPinDO> list = pinMapper.selectByExample(ex);
+            return list.isEmpty() ? null : list.get(0).getAuthorName();
+        } else if ("guba".equals(source) && "post".equals(targetType)) {
+            GubaPostDOExample ex = new GubaPostDOExample();
+            ex.createCriteria().andPostIdEqualTo(targetId);
+            List<GubaPostDO> list = gubaPostMapper.selectByExample(ex);
+            return list.isEmpty() ? null : list.get(0).getAuthorName();
         }
         return null;
     }

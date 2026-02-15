@@ -727,8 +727,6 @@ public class MarkdownViewController {
         if (html == null || html.isEmpty()) return "";
         // 移除 script 标签
         html = html.replaceAll("(?is)<script[^>]*>.*?</script>", "");
-        // 解包 noscript（知乎把 img 包在 noscript 里做懒加载）
-        html = html.replaceAll("(?is)<noscript>(.*?)</noscript>", "$1");
         // 有些图片 src 是占位图，data-actualsrc 才是真实地址，替换之
         java.util.regex.Matcher m = java.util.regex.Pattern
                 .compile("(?i)<img\\s([^>]*?)data-actualsrc\\s*=\\s*\"([^\"]*)\"([^>]*?)>")
@@ -743,7 +741,10 @@ public class MarkdownViewController {
             m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(tag));
         }
         m.appendTail(sb);
-        return sb.toString();
+        html = sb.toString();
+        // 移除 noscript（知乎把 img 包在 noscript 里做懒加载，上面已修正 src，noscript 里的是重复的）
+        html = html.replaceAll("(?is)<noscript>.*?</noscript>", "");
+        return html;
     }
 
     private String sanitizeCommentHtml(String html) {

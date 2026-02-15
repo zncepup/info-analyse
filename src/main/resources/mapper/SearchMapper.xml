@@ -4,7 +4,7 @@
 
   <select id="searchAll" resultType="java.util.LinkedHashMap">
     (
-      SELECT 'answer' AS type, answer_id AS targetId, question_title AS title,
+      SELECT 'answer' AS type, CAST(answer_id AS CHAR) AS targetId, question_title AS title,
              SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
              '/view/zhihu/answer/' AS linkPrefix, created_time AS time
       FROM zhihu_answer
@@ -15,7 +15,7 @@
     )
     UNION ALL
     (
-      SELECT 'article' AS type, article_id AS targetId, title AS title,
+      SELECT 'article' AS type, CAST(article_id AS CHAR) AS targetId, title AS title,
              SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
              '/view/zhihu/article/' AS linkPrefix, created_time AS time
       FROM zhihu_article
@@ -26,7 +26,7 @@
     )
     UNION ALL
     (
-      SELECT 'pin' AS type, pin_id AS targetId, '想法' AS title,
+      SELECT 'pin' AS type, CAST(pin_id AS CHAR) AS targetId, '想法' AS title,
              SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
              '/view/zhihu/pin/' AS linkPrefix, created_time AS time
       FROM zhihu_pin
@@ -36,7 +36,7 @@
     )
     UNION ALL
     (
-      SELECT 'comment' AS type, c.target_id AS targetId,
+      SELECT 'comment' AS type, CAST(c.target_id AS CHAR) AS targetId,
              CONCAT('评论 @', c.author_name) AS title,
              SUBSTRING(c.content, 1, 200) AS snippet, c.author_name AS authorName,
              CASE c.target_type
@@ -52,7 +52,7 @@
     )
     UNION ALL
     (
-      SELECT 'guba_post' AS type, post_id AS targetId, title AS title,
+      SELECT 'guba_post' AS type, CAST(post_id AS CHAR) AS targetId, title AS title,
              SUBSTRING(content, 1, 200) AS snippet, author_name AS authorName,
              '/view/guba/post/' AS linkPrefix, publish_time AS time
       FROM guba_post
@@ -63,7 +63,7 @@
     )
     UNION ALL
     (
-      SELECT 'guba_comment' AS type, c.post_id AS targetId,
+      SELECT 'guba_comment' AS type, CAST(c.post_id AS CHAR) AS targetId,
              CONCAT('股吧评论 @', c.author_name) AS title,
              SUBSTRING(c.content, 1, 200) AS snippet, c.author_name AS authorName,
              '/view/guba/post/' AS linkPrefix,
@@ -75,7 +75,7 @@
     )
     UNION ALL
     (
-      SELECT 'ai_analysis' AS type, a.target_id AS targetId,
+      SELECT 'ai_analysis' AS type, CAST(a.target_id AS CHAR) AS targetId,
              CONCAT('AI分析 (', a.analysis_type, ')') AS title,
              SUBSTRING(a.result, 1, 200) AS snippet, a.ai_model AS authorName,
              CASE a.target_type
@@ -118,96 +118,172 @@
     </choose>
   </select>
 
+  <!-- Reusable WHERE fragment for advanced search conditions -->
+  <sql id="advancedSearchWhere_answer">
+    WHERE 1=1
+    <if test="keyword != null and keyword != ''">
+      AND (a.question_title LIKE CONCAT('%', #{keyword}, '%') OR a.content LIKE CONCAT('%', #{keyword}, '%'))
+    </if>
+    <if test="author != null and author != ''">
+      AND a.author_name = #{author}
+    </if>
+    <if test="contentType != null and contentType != '' and contentType != 'answer'">
+      AND 1=0
+    </if>
+  </sql>
+  <sql id="advancedSearchWhere_article">
+    WHERE 1=1
+    <if test="keyword != null and keyword != ''">
+      AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.content LIKE CONCAT('%', #{keyword}, '%'))
+    </if>
+    <if test="author != null and author != ''">
+      AND a.author_name = #{author}
+    </if>
+    <if test="contentType != null and contentType != '' and contentType != 'article'">
+      AND 1=0
+    </if>
+  </sql>
+  <sql id="advancedSearchWhere_pin">
+    WHERE 1=1
+    <if test="keyword != null and keyword != ''">
+      AND p.content LIKE CONCAT('%', #{keyword}, '%')
+    </if>
+    <if test="author != null and author != ''">
+      AND p.author_name = #{author}
+    </if>
+    <if test="contentType != null and contentType != '' and contentType != 'pin'">
+      AND 1=0
+    </if>
+  </sql>
+  <sql id="advancedSearchWhere_guba">
+    WHERE 1=1
+    <if test="keyword != null and keyword != ''">
+      AND (g.title LIKE CONCAT('%', #{keyword}, '%') OR g.content LIKE CONCAT('%', #{keyword}, '%'))
+    </if>
+    <if test="author != null and author != ''">
+      AND g.author_name = #{author}
+    </if>
+    <if test="contentType != null and contentType != '' and contentType != 'guba_post'">
+      AND 1=0
+    </if>
+  </sql>
+  <sql id="advancedSearchTagJoin_answer">
+  </sql>
+  <sql id="advancedSearchTagJoin_article">
+  </sql>
+  <sql id="advancedSearchTagJoin_pin">
+  </sql>
+  <sql id="advancedSearchTagJoin_guba">
+  </sql>
+
+  <sql id="advancedSearchTagWhere_answer">
+    <if test="tagIds != null and tagIds.size() > 0">
+      AND EXISTS (SELECT 1 FROM content_tag_mapping tm WHERE tm.source='zhihu' AND tm.target_id=a.answer_id AND tm.target_type='answer'
+        AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>)
+    </if>
+  </sql>
+  <sql id="advancedSearchTagWhere_article">
+    <if test="tagIds != null and tagIds.size() > 0">
+      AND EXISTS (SELECT 1 FROM content_tag_mapping tm WHERE tm.source='zhihu' AND tm.target_id=a.article_id AND tm.target_type='article'
+        AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>)
+    </if>
+  </sql>
+  <sql id="advancedSearchTagWhere_pin">
+    <if test="tagIds != null and tagIds.size() > 0">
+      AND EXISTS (SELECT 1 FROM content_tag_mapping tm WHERE tm.source='zhihu' AND tm.target_id=p.pin_id AND tm.target_type='pin'
+        AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>)
+    </if>
+  </sql>
+  <sql id="advancedSearchTagWhere_guba">
+    <if test="tagIds != null and tagIds.size() > 0">
+      AND EXISTS (SELECT 1 FROM content_tag_mapping tm WHERE tm.source='guba' AND tm.target_id=g.post_id AND tm.target_type='post'
+        AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>)
+    </if>
+  </sql>
+
   <select id="advancedSearch" resultType="java.util.LinkedHashMap">
     SELECT * FROM (
       (
-        SELECT 'answer' AS type, a.answer_id AS targetId, a.question_title AS title,
+        SELECT 'answer' AS type, CAST(a.answer_id AS CHAR) AS targetId, a.question_title AS title,
                SUBSTRING(a.content, 1, 200) AS snippet, a.author_name AS authorName,
                '/view/zhihu/answer/' AS linkPrefix, a.created_time AS time, 'zhihu' AS source
         FROM zhihu_answer a
-        <if test="tagIds != null and tagIds.size() > 0">
-          INNER JOIN content_tag_mapping tm ON tm.source='zhihu' AND tm.target_id=a.answer_id AND tm.target_type='answer'
-            AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>
-        </if>
-        WHERE 1=1
-        <if test="keyword != null and keyword != ''">
-          AND (a.question_title LIKE CONCAT('%', #{keyword}, '%') OR a.content LIKE CONCAT('%', #{keyword}, '%'))
-        </if>
-        <if test="author != null and author != ''">
-          AND a.author_name = #{author}
-        </if>
-        <if test="contentType != null and contentType != '' and contentType != 'answer'">
-          AND 1=0
-        </if>
-        ORDER BY a.created_time DESC LIMIT #{limit}
+        <include refid="advancedSearchTagJoin_answer"/>
+        <include refid="advancedSearchWhere_answer"/>
+        <include refid="advancedSearchTagWhere_answer"/>
+        ORDER BY a.created_time DESC LIMIT 1000
       )
       UNION ALL
       (
-        SELECT 'article' AS type, a.article_id AS targetId, a.title AS title,
+        SELECT 'article' AS type, CAST(a.article_id AS CHAR) AS targetId, a.title AS title,
                SUBSTRING(a.content, 1, 200) AS snippet, a.author_name AS authorName,
                '/view/zhihu/article/' AS linkPrefix, a.created_time AS time, 'zhihu' AS source
         FROM zhihu_article a
-        <if test="tagIds != null and tagIds.size() > 0">
-          INNER JOIN content_tag_mapping tm ON tm.source='zhihu' AND tm.target_id=a.article_id AND tm.target_type='article'
-            AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>
-        </if>
-        WHERE 1=1
-        <if test="keyword != null and keyword != ''">
-          AND (a.title LIKE CONCAT('%', #{keyword}, '%') OR a.content LIKE CONCAT('%', #{keyword}, '%'))
-        </if>
-        <if test="author != null and author != ''">
-          AND a.author_name = #{author}
-        </if>
-        <if test="contentType != null and contentType != '' and contentType != 'article'">
-          AND 1=0
-        </if>
-        ORDER BY a.created_time DESC LIMIT #{limit}
+        <include refid="advancedSearchTagJoin_article"/>
+        <include refid="advancedSearchWhere_article"/>
+        <include refid="advancedSearchTagWhere_article"/>
+        ORDER BY a.created_time DESC LIMIT 1000
       )
       UNION ALL
       (
-        SELECT 'pin' AS type, p.pin_id AS targetId, '想法' AS title,
+        SELECT 'pin' AS type, CAST(p.pin_id AS CHAR) AS targetId, '想法' AS title,
                SUBSTRING(p.content, 1, 200) AS snippet, p.author_name AS authorName,
                '/view/zhihu/pin/' AS linkPrefix, p.created_time AS time, 'zhihu' AS source
         FROM zhihu_pin p
-        <if test="tagIds != null and tagIds.size() > 0">
-          INNER JOIN content_tag_mapping tm ON tm.source='zhihu' AND tm.target_id=p.pin_id AND tm.target_type='pin'
-            AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>
-        </if>
-        WHERE 1=1
-        <if test="keyword != null and keyword != ''">
-          AND p.content LIKE CONCAT('%', #{keyword}, '%')
-        </if>
-        <if test="author != null and author != ''">
-          AND p.author_name = #{author}
-        </if>
-        <if test="contentType != null and contentType != '' and contentType != 'pin'">
-          AND 1=0
-        </if>
-        ORDER BY p.created_time DESC LIMIT #{limit}
+        <include refid="advancedSearchTagJoin_pin"/>
+        <include refid="advancedSearchWhere_pin"/>
+        <include refid="advancedSearchTagWhere_pin"/>
+        ORDER BY p.created_time DESC LIMIT 1000
       )
       UNION ALL
       (
-        SELECT 'guba_post' AS type, g.post_id AS targetId, g.title AS title,
+        SELECT 'guba_post' AS type, CAST(g.post_id AS CHAR) AS targetId, g.title AS title,
                SUBSTRING(g.content, 1, 200) AS snippet, g.author_name AS authorName,
                '/view/guba/post/' AS linkPrefix, g.publish_time AS time, 'guba' AS source
         FROM guba_post g
-        <if test="tagIds != null and tagIds.size() > 0">
-          INNER JOIN content_tag_mapping tm ON tm.source='guba' AND tm.target_id=g.post_id AND tm.target_type='post'
-            AND tm.tag_id IN <foreach item="tid" collection="tagIds" open="(" separator="," close=")">#{tid}</foreach>
-        </if>
-        WHERE 1=1
-        <if test="keyword != null and keyword != ''">
-          AND (g.title LIKE CONCAT('%', #{keyword}, '%') OR g.content LIKE CONCAT('%', #{keyword}, '%'))
-        </if>
-        <if test="author != null and author != ''">
-          AND g.author_name = #{author}
-        </if>
-        <if test="contentType != null and contentType != '' and contentType != 'guba_post'">
-          AND 1=0
-        </if>
-        ORDER BY g.publish_time DESC LIMIT #{limit}
+        <include refid="advancedSearchTagJoin_guba"/>
+        <include refid="advancedSearchWhere_guba"/>
+        <include refid="advancedSearchTagWhere_guba"/>
+        ORDER BY g.publish_time DESC LIMIT 1000
       )
     ) AS combined ORDER BY time DESC
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+
+  <select id="advancedSearchCount" resultType="int">
+    SELECT SUM(cnt) FROM (
+      (
+        SELECT COUNT(*) AS cnt
+        FROM zhihu_answer a
+        <include refid="advancedSearchTagJoin_answer"/>
+        <include refid="advancedSearchWhere_answer"/>
+        <include refid="advancedSearchTagWhere_answer"/>
+      )
+      UNION ALL
+      (
+        SELECT COUNT(*) AS cnt
+        FROM zhihu_article a
+        <include refid="advancedSearchTagJoin_article"/>
+        <include refid="advancedSearchWhere_article"/>
+        <include refid="advancedSearchTagWhere_article"/>
+      )
+      UNION ALL
+      (
+        SELECT COUNT(*) AS cnt
+        FROM zhihu_pin p
+        <include refid="advancedSearchTagJoin_pin"/>
+        <include refid="advancedSearchWhere_pin"/>
+        <include refid="advancedSearchTagWhere_pin"/>
+      )
+      UNION ALL
+      (
+        SELECT COUNT(*) AS cnt
+        FROM guba_post g
+        <include refid="advancedSearchTagJoin_guba"/>
+        <include refid="advancedSearchWhere_guba"/>
+        <include refid="advancedSearchTagWhere_guba"/>
+      )
+    ) AS counts
   </select>
 
 </mapper>

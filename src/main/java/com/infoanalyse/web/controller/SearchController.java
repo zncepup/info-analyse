@@ -126,7 +126,8 @@ public class SearchController {
     }
 
     /**
-     * 高级搜索：支持关键字 + 作者 + 标签 + 内容类型多条件组合
+     * 高级搜索：支持关键字 + 作者 + 标签 + 内容类型多条件组合，支持分页
+     * 无条件时返回全部内容（分页）
      */
     @GetMapping("/advanced")
     public Map<String, Object> advancedSearch(
@@ -134,9 +135,11 @@ public class SearchController {
             @RequestParam(value = "author", required = false) String author,
             @RequestParam(value = "tags", required = false) String tagIdsStr,
             @RequestParam(value = "type", required = false) String contentType,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "20") int limit,
+            @RequestParam(value = "offset", defaultValue = "0") int offset) {
 
         if (limit > 500) limit = 500;
+        if (offset < 0) offset = 0;
         if (keyword != null) keyword = keyword.trim();
         if (author != null) author = author.trim();
         if (contentType != null) contentType = contentType.trim();
@@ -151,21 +154,22 @@ public class SearchController {
             if (tagIds.isEmpty()) tagIds = null;
         }
 
-        // 至少需要一个筛选条件
         boolean hasKeyword = keyword != null && !keyword.isEmpty();
         boolean hasAuthor = author != null && !author.isEmpty();
         boolean hasTags = tagIds != null;
         boolean hasType = contentType != null && !contentType.isEmpty();
-        if (!hasKeyword && !hasAuthor && !hasTags && !hasType) {
-            return Map.of("results", List.of(), "total", 0);
-        }
 
+        // 传给 SQL 的参数：无条件时全部传 null，SQL 的 WHERE 1=1 会匹配全部
+        String sqlKeyword = hasKeyword ? keyword : null;
+        String sqlAuthor = hasAuthor ? author : null;
+        String sqlType = hasType ? contentType : null;
+
+        // 查总数
+        int total = searchMapper.advancedSearchCount(sqlKeyword, sqlAuthor, tagIds, sqlType);
+
+        // 查分页数据
         List<Map<String, Object>> raw = searchMapper.advancedSearch(
-                hasKeyword ? keyword : null,
-                hasAuthor ? author : null,
-                tagIds,
-                hasType ? contentType : null,
-                limit);
+                sqlKeyword, sqlAuthor, tagIds, sqlType, limit, offset);
 
         // 构建结果，附带标签信息
         List<Map<String, Object>> results = new ArrayList<>();
@@ -181,7 +185,7 @@ public class SearchController {
             String type = (String) r.get("type");
             String tgtType = "guba_post".equals(type) ? "post" : type;
             if (src != null && targetId != null) {
-                List<ContentTagMappingDO> mappings = tagMapper.selectMappingsByContent(src, ((Number) targetId).longValue(), tgtType);
+                List<ContentTagMappingDO> mappings = tagMapper.selectMappingsByContent(src, Long.parseLong(targetId.toString()), tgtType);
                 List<Map<String, Object>> tagList = new ArrayList<>();
                 for (ContentTagMappingDO m : mappings) {
                     ContentTagDO tag = tagMapper.selectById(m.getTagId());
@@ -195,7 +199,9 @@ public class SearchController {
         }
 
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("total", results.size());
+        resp.put("total", total);
+        resp.put("offset", offset);
+        resp.put("limit", limit);
         resp.put("results", results);
         return resp;
     }
