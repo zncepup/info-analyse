@@ -17,12 +17,24 @@
 - 批量历史评论分类：一次性对所有未分类评论进行投资相关性标注
 - 评论区 AI 分析：对投资相关评论线程做进一步投资线索提炼
 
-**Web 界面**
-- iOS 风格 Web UI：移动端优先，支持内容浏览、任务管理、分页
+**Web 界面（三 Tab 架构）**
+- iOS 风格 Web UI：移动端优先，三个 Tab 页（抓取、浏览、管理）
+- 抓取 Tab：扫码登录、同步动态、抓取链接、任务管理
+- 浏览 Tab：高级搜索（关键词 + 作者 + 标签 + 类型多条件组合）、分页浏览、批量选择/导出/打标签/删除
+- 管理 Tab：作者管理、标签管理、登录状态
 - 内容阅读器：iOS 风格排版，评论折叠（仅展示投资相关评论），AI 分析展示
 - 全局关键字搜索：跨文章、回答、想法、评论、AI 分析结果搜索，按内容维度聚合展示
 - 页内搜索：从搜索结果点入详情页后，自动高亮关键词并支持上下导航
-- Word 导出：将内容及 AI 分析导出为 Word 文档
+
+**标签系统**
+- 自定义标签：创建/删除标签，自定义颜色
+- 内容打标签：单篇或批量为内容添加/移除标签
+- 按标签筛选：高级搜索支持多标签组合筛选
+
+**导出**
+- 批量 Word 导出：选中多篇内容导出为独立 .docx 文件，打包为 zip 下载
+- 支持选择导出正文、评论、AI 分析
+- 图片嵌入 Word、超链接转纯文本
 
 **部署**
 - Docker 部署：一键打包部署到远程服务器
@@ -104,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-restart.ps1
 | Username | root |
 | Password | root123 |
 
-共 10 张表，DDL 见 `src/main/resources/schema.sql`：
+共 12 张表，DDL 见 `src/main/resources/schema.sql`：
 
 | 表名 | 说明 |
 |------|------|
@@ -118,6 +130,8 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-restart.ps1
 | crawl_image | 爬取图片记录 |
 | crawl_task | 抓取任务记录 |
 | ai_analysis | AI 分析结果（investment_clue / comment_investment_clue） |
+| content_tag | 自定义标签 |
+| content_tag_mapping | 内容-标签关联 |
 
 ## API 接口
 
@@ -158,8 +172,27 @@ powershell -ExecutionPolicy Bypass -File scripts\dev-restart.ps1
 |------|------|------|
 | GET | `/api/outputs` | 内容作者列表 |
 | GET | `/api/outputs/{author}/files` | 作者内容列表 |
-| DELETE | `/api/outputs/{path}` | 删除内容（级联删除评论和 AI 分析） |
+| DELETE | `/api/outputs/{source}/{type}/{id}` | 删除内容（级联删除评论和 AI 分析） |
 | GET | `/api/search?q=关键词&limit=50` | 全局关键字搜索（跨 7 张表） |
+| GET | `/api/search/advanced` | 高级搜索（关键词+作者+标签+类型，分页） |
+
+### 标签管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/tags` | 标签列表 |
+| POST | `/api/tags` | 创建标签 |
+| DELETE | `/api/tags/{id}` | 删除标签 |
+| POST | `/api/tags/{id}/contents` | 为内容添加标签 |
+| DELETE | `/api/tags/{id}/contents` | 移除内容标签 |
+| POST | `/api/tags/{id}/contents/batch` | 批量打标签 |
+
+### 导出
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/export/batch` | 批量导出 Word（每篇独立 .docx，打包 zip） |
+| GET | `/api/export/download/{filename}` | 下载导出文件 |
 
 ### 任务管理
 
@@ -200,7 +233,7 @@ src/main/java/com/infoanalyse/
 ├── commons/service/
 │   └── WordExportService.java           # Word 导出
 ├── dao/
-│   ├── mapper/                          # MyBatis Mapper 接口（含 SearchMapper）
+│   ├── mapper/                          # MyBatis Mapper 接口（含 SearchMapper、ContentTagMapper）
 │   └── model/                           # DO 和 Example 类（MBG 生成）
 ├── eastmoney/
 │   ├── model/                           # 股吧数据模型
@@ -212,7 +245,9 @@ src/main/java/com/infoanalyse/
 │   │   ├── ZhihuAuthorController.java   # 作者管理 API
 │   │   ├── GubaApiController.java       # 股吧 API
 │   │   ├── OutputController.java        # 内容列表 API
-│   │   ├── SearchController.java        # 全局搜索 API
+│   │   ├── SearchController.java        # 全局搜索 + 高级搜索 API
+│   │   ├── TagController.java           # 标签管理 API
+│   │   ├── ExportController.java        # 批量导出 API
 │   │   ├── MarkdownViewController.java  # 内容阅读器（HTML 渲染）
 │   │   ├── MigrationController.java     # 数据迁移 API
 │   │   ├── LogController.java           # 日志 API
@@ -233,7 +268,12 @@ src/main/resources/
 ├── schema.sql                           # 数据库 DDL
 ├── mapper/*.xml                         # MyBatis XML 映射（含 SearchMapper.xml）
 └── static/
-    ├── index.html                       # 前端单页应用
+    ├── index.html                       # 前端 HTML 骨架
+    ├── style.css                        # 全局样式
+    ├── app.js                           # 路由 + 共享工具函数
+    ├── crawl.js                         # 抓取 Tab 逻辑
+    ├── browse.js                        # 浏览 Tab 逻辑（搜索、分页、批量操作）
+    ├── manage.js                        # 管理 Tab 逻辑（作者、标签）
     └── page-search.js                   # 页内搜索高亮与导航
 
 scripts/
@@ -293,6 +333,7 @@ powershell -ExecutionPolicy Bypass -File scripts\run-local-docker.ps1
 - 抓取间隔 3-6 秒随机延迟，避免触发反爬
 - 评论分类使用 `invest_related` 字段：1=投资相关，0=无关，NULL=未分类
 - AI 分析类型：`investment_clue`（内容投资线索）、`comment_investment_clue`（评论投资线索）
+- 知乎 HTML 内容自动去重图片（noscript 懒加载处理）
 
 ## 许可证
 
@@ -369,7 +410,7 @@ java -jar target/info-analyse-1.0.0.jar
 
 ### Step 6: 验证
 
-浏览器访问 http://localhost:8080 ，应看到 iOS 风格的 Web 管理界面。
+浏览器访问 http://localhost:8080 ，应看到 iOS 风格的 Web 管理界面（默认进入浏览 Tab）。
 
 ```bash
 curl http://localhost:8080/api/zhihu/status
