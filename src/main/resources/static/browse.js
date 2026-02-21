@@ -30,12 +30,7 @@ function populateSearchAuthor() {
     o.textContent = a.authorName || a.userId;
     sel.appendChild(o);
   });
-  // 默认选中 MR Dang
   if (prev) sel.value = prev;
-  else {
-    const mrDang = authorCache.find(a => (a.authorName || '').toLowerCase().includes('mr') && (a.authorName || '').toLowerCase().includes('dang'));
-    if (mrDang) sel.value = mrDang.authorName || mrDang.userId;
-  }
 }
 
 // ===== Tag selector in search =====

@@ -19,7 +19,8 @@
         "playwright_post",
         "playwright_get",
         "playwright_resize",
-        "playwright_fill"
+        "playwright_fill",
+        "playwright_select"
       ]
     }
   }
